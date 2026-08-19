@@ -12,8 +12,11 @@ const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:51
 export default function DashboardTab({ payslips, employees, refreshData, triggerAlert }) {
   const [selectedMonth, setSelectedMonth] = useState('');
 
+  const payslipsList = Array.isArray(payslips) ? payslips : [];
+  const employeesList = Array.isArray(employees) ? employees : [];
+
   // Obtener meses únicos presentes ordenados desc
-  const months = [...new Set(payslips.map(p => p.month))].sort().reverse();
+  const months = [...new Set(payslipsList.map(p => p.month).filter(Boolean))].sort().reverse();
 
   useEffect(() => {
     if (!selectedMonth && months.length > 0) {
@@ -26,19 +29,19 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
   }, [months, selectedMonth]);
 
   // Filtrados por mes activo
-  const monthlyPayslips = payslips.filter(p => p.month === selectedMonth);
+  const monthlyPayslips = payslipsList.filter(p => p.month === selectedMonth);
   const totalPayslips = monthlyPayslips.length;
-  const signedPayslips = monthlyPayslips.filter(p => p.status === 'Firmado').length;
-  const pendingPayslips = monthlyPayslips.filter(p => p.status === 'Enviado').length;
+  const signedPayslips = monthlyPayslips.filter(p => p.status === 'Firmado' || p.status === 'firmado').length;
+  const pendingPayslips = monthlyPayslips.filter(p => p.status === 'Enviado' || p.status === 'pendiente').length;
   const scheduledPayslips = monthlyPayslips.filter(p => p.status === 'Programado').length;
   const uploadedPayslips = monthlyPayslips.filter(p => p.status === 'Cargado').length;
 
-  const totalEmployees = employees.length;
+  const totalEmployees = employeesList.length;
   const conformityRate = totalPayslips > 0 ? Math.round((signedPayslips / totalPayslips) * 100) : 0;
 
   // Cobertura del lote: cuántos empleados del total tienen al menos un recibo (original o duplicado) cargado en el mes
-  const employeesWithPayslip = new Set(monthlyPayslips.filter(p => p.employeeId).map(p => p.employeeId));
-  const missingEmployees = employees.filter(e => !employeesWithPayslip.has(e.id));
+  const employeesWithPayslip = new Set(monthlyPayslips.filter(p => p.employeeId || p.employee_id).map(p => p.employeeId || p.employee_id));
+  const missingEmployees = employeesList.filter(e => !employeesWithPayslip.has(e.id));
   const coverageRate = totalEmployees > 0 ? Math.round((employeesWithPayslip.size / totalEmployees) * 100) : 0;
 
   // Calcular tiempo promedio de firma
