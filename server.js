@@ -55,8 +55,8 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Iniciar servidor solo si no está siendo importado como módulo
-if (process.env.NODE_ENV !== 'test') {
+// Iniciar servidor solo si no está siendo importado como módulo ni en Vercel Serverless
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`=======================================================`);
     console.log(`🚀 DocuMation Backend API escuchando en puerto ${PORT}`);
