@@ -42,8 +42,10 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
       const res = await fetch(`${API_BASE}/api/employees`);
       if (res.ok) {
         const data = await res.json();
-        setEmployees(data);
-        return;
+        if (Array.isArray(data)) {
+          setEmployees(data);
+          return;
+        }
       }
     } catch (e) {
       console.error(e);
@@ -51,46 +53,58 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
     const saved = localStorage.getItem('mock_employees');
     if (saved) {
       try {
-        setEmployees(JSON.parse(saved));
-      } catch (err) {
-        setEmployees([]);
-      }
-    } else {
-      const defaultEmps = [
-        { id: 1, name: 'Juan Pérez', email: 'juan.perez@empresa.com', cuil: '20-12345678-9', role: 'empleado', puesto: 'Desarrollador', fechaIngreso: '2023-01-15', archived: false },
-        { id: 2, name: 'María Gómez', email: 'maria.gomez@empresa.com', cuil: '27-98765432-1', role: 'rrhh', puesto: 'Analista de RRHH', fechaIngreso: '2022-05-10', archived: false }
-      ];
-      setEmployees(defaultEmps);
-      localStorage.setItem('mock_employees', JSON.stringify(defaultEmps));
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setEmployees(parsed);
+          return;
+        }
+      } catch (err) {}
     }
+    const defaultEmps = [
+      { id: '1', name: 'Juan Pérez', email: 'juan.perez@empresa.com', cuil: '20-12345678-9', role: 'empleado', puesto: 'Desarrollador', fechaIngreso: '2023-01-15', archived: false },
+      { id: '2', name: 'María Gómez', email: 'maria.gomez@empresa.com', cuil: '27-98765432-1', role: 'rrhh', puesto: 'Analista de RRHH', fechaIngreso: '2022-05-10', archived: false }
+    ];
+    setEmployees(defaultEmps);
+    localStorage.setItem('mock_employees', JSON.stringify(defaultEmps));
   };
 
   const fetchPayslips = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/payslips`);
-      const data = await res.json();
-      setPayslips(data);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setPayslips(data);
+          return;
+        }
+      }
+      setPayslips([]);
     } catch (e) {
       console.error(e);
+      setPayslips([]);
     }
   };
 
   const fetchSettings = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/settings`);
-      const data = await res.json();
-      setCompanyName(data.companyName);
-      setSmtpSettings({
-        SMTP_HOST: data.smtpHost,
-        SMTP_PORT: data.smtpPort,
-        SMTP_USER: data.smtpUser,
-        SMTP_PASS: data.smtpPass,
-        SMTP_FROM: data.smtpFrom
-      });
-      setGoogleSettings({
-        googleClientId: data.googleClientId,
-        googleAllowedDomain: data.googleAllowedDomain
-      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') {
+          if (data.companyName) setCompanyName(data.companyName);
+          setSmtpSettings({
+            SMTP_HOST: data.smtpHost || '',
+            SMTP_PORT: data.smtpPort || '587',
+            SMTP_USER: data.smtpUser || '',
+            SMTP_PASS: data.smtpPass || '',
+            SMTP_FROM: data.smtpFrom || ''
+          });
+          setGoogleSettings({
+            googleClientId: data.googleClientId || '',
+            googleAllowedDomain: data.googleAllowedDomain || ''
+          });
+        }
+      }
     } catch (e) {
       console.error("Error al cargar configuración:", e);
     }
