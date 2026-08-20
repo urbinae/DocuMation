@@ -5,15 +5,23 @@ import {
   createEmployee,
   updateEmployee,
   deleteEmployee,
+  archiveEmployee,
+  importEmployees,
 } from '../controllers/employees.controller.js';
 
 const router = Router();
 
 /**
  * @route GET /api/employees
- * @desc Obtener listado de empleados (opcional ?include_archived=true)
+ * @desc Obtener listado de empleados
  */
 router.get('/', getEmployees);
+
+/**
+ * @route POST /api/employees/import
+ * @desc Importación masiva desde CSV
+ */
+router.post('/import', importEmployees);
 
 /**
  * @route GET /api/employees/:id
@@ -34,8 +42,14 @@ router.post('/', createEmployee);
 router.put('/:id', updateEmployee);
 
 /**
+ * @route PATCH /api/employees/:id/archive
+ * @desc Archivar o desarchivar empleado
+ */
+router.patch('/:id/archive', archiveEmployee);
+
+/**
  * @route DELETE /api/employees/:id
- * @desc Baja lógica de un empleado (archived = true)
+ * @desc Eliminar empleado
  */
 router.delete('/:id', deleteEmployee);
 
