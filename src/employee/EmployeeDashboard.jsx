@@ -21,18 +21,27 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
   const fetchPayslips = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/employee/payslips/${employee.id}`);
-      const data = await res.json();
-      setPayslips(data);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setPayslips(data);
+          return;
+        }
+      }
+      setPayslips([]);
     } catch (e) {
       console.error(e);
+      setPayslips([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPayslips();
-  }, [employee.id]);
+    if (employee?.id) {
+      fetchPayslips();
+    }
+  }, [employee?.id]);
 
   const handleFinishSigning = () => {
     setActiveSignPayslip(null);
@@ -50,9 +59,10 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
   }
 
   // Cálculos de KPIs del Empleado
-  const totalPayslips = payslips.length;
-  const signedPayslips = payslips.filter(p => p.status === 'Firmado').length;
-  const pendingPayslips = payslips.filter(p => p.status !== 'Firmado' && p.duplicadoPath).length;
+  const payslipsList = Array.isArray(payslips) ? payslips : [];
+  const totalPayslips = payslipsList.length;
+  const signedPayslips = payslipsList.filter(p => p.status === 'Firmado' || p.status === 'firmado').length;
+  const pendingPayslips = payslipsList.filter(p => p.status !== 'Firmado' && p.status !== 'firmado' && (p.duplicadoPath || p.file_path)).length;
   const complianceRate = totalPayslips > 0 ? Math.round((signedPayslips / totalPayslips) * 100) : 0;
 
   return (
@@ -186,7 +196,7 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
                   <RefreshCw className="spin" size={24} style={{ animation: 'spin 2s linear infinite' }} />
                   <p style={{ marginTop: '12px' }}>Cargando recibos...</p>
                 </div>
-              ) : payslips.length === 0 ? (
+              ) : payslipsList.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                   No tienes ningún recibo de haberes disponible en el sistema.
                 </div>
@@ -203,7 +213,7 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
                       </tr>
                     </thead>
                     <tbody>
-                      {payslips.map(ps => {
+                      {payslipsList.map(ps => {
                         const hasOriginal = !!ps.originalPath;
                         const hasDuplicado = !!ps.duplicadoPath;
                         const isSigned = ps.status === 'Firmado';
