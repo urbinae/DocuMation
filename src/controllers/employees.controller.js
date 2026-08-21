@@ -11,9 +11,10 @@ export const getEmployees = async (req, res) => {
 
     let query = supabaseAdmin
       .from('employees')
-      .select('id, cuil, email, name, role, puesto, fecha_ingreso, archived, created_at');
+      .select('id, cuil, email, name, role, puesto, fecha_ingreso, archived, created_at')
+      .order('created_at', { ascending: false });
 
-    if (include_archived !== 'true') {
+    if (include_archived === 'false') {
       query = query.eq('archived', false);
     }
 

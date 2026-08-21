@@ -210,6 +210,11 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
     }
   };
 
+  const displayedEmployees = (Array.isArray(employees) ? employees : []).filter(emp => {
+    const isArchived = Boolean(emp.archived);
+    return showArchived ? isArchived : !isArchived;
+  });
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '32px' }}>
       <div className="glass-panel" style={{ height: 'fit-content' }}>
@@ -341,7 +346,7 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
 
       <div className="glass-panel">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3>Lista de Empleados ({employees.filter(emp => showArchived ? emp.archived : !emp.archived).length})</h3>
+          <h3>Lista de Empleados ({displayedEmployees.length})</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <input
               type="checkbox"
@@ -353,9 +358,9 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
           </div>
         </div>
         <div className="table-container">
-          {employees.filter(emp => showArchived ? emp.archived : !emp.archived).length === 0 ? (
+          {displayedEmployees.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-              No hay empleados registrados. Agrega uno o importa un CSV.
+              {showArchived ? 'No hay empleados archivados.' : 'No hay empleados registrados. Agrega uno o importa un CSV.'}
             </div>
           ) : (
             <table>
@@ -372,55 +377,61 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
                 </tr>
               </thead>
               <tbody>
-                {employees.filter(emp => showArchived ? emp.archived : !emp.archived).map(emp => (
-                  <tr key={emp.id} style={{ opacity: emp.archived ? 0.6 : 1 }}>
-                    <td style={{ fontWeight: '600' }}>{emp.name}</td>
-                    <td>{emp.email}</td>
-                    <td style={{ fontFamily: 'monospace' }}>{emp.cuil}</td>
-                    <td>{emp.puesto || <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No definido</span>}</td>
-                    <td>{emp.fechaIngreso ? new Date(emp.fechaIngreso + 'T00:00:00').toLocaleDateString('es-AR') : <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No definida</span>}</td>
-                    <td>
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          padding: '4px 8px',
-                          borderRadius: '12px',
-                          background: emp.role === 'rrhh' ? 'rgba(255, 112, 67, 0.15)' : 'rgba(255,255,255,0.05)',
-                          color: emp.role === 'rrhh' ? '#ff7043' : 'var(--text-secondary)',
-                          border: emp.role === 'rrhh' ? '1px solid rgba(255, 112, 67, 0.3)' : '1px solid rgba(255,255,255,0.1)',
-                          display: 'inline-block',
-                          fontWeight: '600'
-                        }}
-                      >
-                        {emp.role === 'rrhh' ? 'RRHH' : 'Empleado'}
-                      </span>
-                    </td>
-                    <td>
-                      <span style={{ fontSize: '12px', color: emp.password ? 'var(--text-primary)' : 'var(--text-muted)', fontFamily: 'monospace' }}>
-                        {emp.password ? emp.password : `${emp.cuil.replace(/\D/g, '')} (Defecto)`}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ padding: '6px 10px' }}
-                          onClick={() => handleEdit(emp)}
+                {displayedEmployees.map(emp => {
+                  const isArchived = Boolean(emp.archived);
+                  const cuilClean = emp.cuil ? String(emp.cuil).replace(/\D/g, '') : '';
+                  const ingresoDate = emp.fecha_ingreso || emp.fechaIngreso;
+
+                  return (
+                    <tr key={emp.id} style={{ opacity: isArchived ? 0.6 : 1 }}>
+                      <td style={{ fontWeight: '600' }}>{emp.name}</td>
+                      <td>{emp.email}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{emp.cuil}</td>
+                      <td>{emp.puesto || <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No definido</span>}</td>
+                      <td>{ingresoDate ? new Date(String(ingresoDate).split('T')[0] + 'T00:00:00').toLocaleDateString('es-AR') : <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No definida</span>}</td>
+                      <td>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            padding: '4px 8px',
+                            borderRadius: '12px',
+                            background: emp.role === 'rrhh' ? 'rgba(255, 112, 67, 0.15)' : 'rgba(255,255,255,0.05)',
+                            color: emp.role === 'rrhh' ? '#ff7043' : 'var(--text-secondary)',
+                            border: emp.role === 'rrhh' ? '1px solid rgba(255, 112, 67, 0.3)' : '1px solid rgba(255,255,255,0.1)',
+                            display: 'inline-block',
+                            fontWeight: '600'
+                          }}
                         >
-                          Editar
-                        </button>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ padding: '6px 10px', color: emp.archived ? 'var(--success)' : 'var(--warning)' }}
-                          onClick={() => handleArchive(emp.id, emp.archived)}
-                          title={emp.archived ? "Restaurar" : "Archivar"}
-                        >
-                          {emp.archived ? <RefreshCw size={14} /> : <FileDown size={14} />}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {emp.role === 'rrhh' ? 'RRHH' : 'Empleado'}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: '12px', color: emp.password ? 'var(--text-primary)' : 'var(--text-muted)', fontFamily: 'monospace' }}>
+                          {emp.password ? emp.password : `${cuilClean} (Defecto)`}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '6px 10px' }}
+                            onClick={() => handleEdit(emp)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '6px 10px', color: isArchived ? 'var(--success)' : 'var(--warning)' }}
+                            onClick={() => handleArchive(emp.id, isArchived)}
+                            title={isArchived ? "Restaurar" : "Archivar"}
+                          >
+                            {isArchived ? <RefreshCw size={14} /> : <FileDown size={14} />}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
