@@ -209,7 +209,28 @@ export const createPayslip = async (req, res) => {
 };
 
 /**
+ * Helper para convertir fechas de Excel (número de serie o texto) a YYYY-MM
+ */
+const excelDateToISO = (val, fallbackMonth) => {
+  const ssf = XLSX.SSF || XLSX.default?.SSF;
+  if (typeof val === 'number' && val > 30000 && ssf && ssf.parse_date_code) {
+    const dateObj = ssf.parse_date_code(val);
+    if (dateObj && dateObj.y > 1900) {
+      const y = dateObj.y;
+      const m = String(dateObj.m).padStart(2, '0');
+      return `${y}-${m}`;
+    }
+  }
+  if (typeof val === 'string' && val.trim().length >= 4) {
+    const cleaned = val.trim();
+    if (cleaned.match(/^\d{4}-\d{2}/)) return cleaned.slice(0, 7);
+  }
+  return fallbackMonth || new Date().toISOString().slice(0, 7);
+};
+
+/**
  * Carga e importación masiva desde archivo Excel (.xlsx / .xls)
+ * Admite formatos planos, hoja Resumen o formato 'RECIBO DE HABERES' (como en filestests)
  * POST /api/payslips/upload-excel
  */
 export const uploadExcelPayslips = async (req, res) => {
@@ -222,51 +243,143 @@ export const uploadExcelPayslips = async (req, res) => {
     }
 
     const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    const items = [];
 
-    if (!rows || rows.length === 0) {
-      return res.status(400).json({ error: 'Bad Request', message: 'El archivo Excel está vacío o no contiene filas procesables.' });
+    // Recorrer todas las hojas del libro de Excel
+    workbook.SheetNames.forEach((sheetName) => {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) return;
+
+      // 1. Intentar formato plano por objeto (filas con encabezados estándar)
+      const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      if (jsonRows.length > 0) {
+        const firstRow = jsonRows[0];
+        const keys = Object.keys(firstRow).map((k) => k.toLowerCase());
+        if (keys.some((k) => k.includes('cuil') || k.includes('nombre') || k.includes('empleado'))) {
+          jsonRows.forEach((row) => {
+            const rawCuil = String(row.CUIL || row.cuil || row['CUIL/CUIT'] || '').trim();
+            const rawName = String(row.Nombre || row.nombre || row.Empleado || row.name || '').trim();
+            const rawEmail = String(row.Email || row.email || row.Mail || '').trim().toLowerCase();
+            const rawPuesto = String(row.Puesto || row.puesto || row.Tarea || '').trim();
+            const rawPeriodo = excelDateToISO(row.Periodo || row.periodo || row.Mes, month);
+
+            if (rawCuil || rawName || rawEmail) {
+              items.push({
+                name: rawName || 'Empleado',
+                cuil: rawCuil,
+                email: rawEmail,
+                puesto: rawPuesto,
+                periodo: rawPeriodo,
+              });
+            }
+          });
+          return;
+        }
+      }
+
+      // 2. Formato estructurado / matricial (Hoja Resumen u Hojas de Recibos individuales)
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      if (sheetName.toLowerCase().includes('resumen')) {
+        let nameIdx = -1, cuilIdx = -1, puestoIdx = -1, mesIdx = -1;
+
+        data.forEach((row) => {
+          const strRow = row.map((c) => String(c));
+          if (strRow.includes('Nombre') && strRow.includes('CUIL')) {
+            nameIdx = strRow.indexOf('Nombre');
+            cuilIdx = strRow.indexOf('CUIL');
+            puestoIdx = strRow.indexOf('Tarea');
+            mesIdx = strRow.indexOf('Mes');
+          } else if (nameIdx !== -1 && row[nameIdx] && row[cuilIdx] && String(row[cuilIdx]).match(/\d+/)) {
+            items.push({
+              name: String(row[nameIdx]).trim(),
+              cuil: String(row[cuilIdx]).trim(),
+              email: '',
+              puesto: puestoIdx !== -1 ? String(row[puestoIdx] || '').trim() : '',
+              periodo: excelDateToISO(row[mesIdx], month),
+            });
+          }
+        });
+      } else {
+        // Hojas individuales tipo "RECIBO DE HABERES"
+        let name = '', cuil = '', puesto = '', periodo = '';
+        let isRecibo = false;
+
+        data.forEach((row, rIdx) => {
+          row.forEach((cell, cIdx) => {
+            const val = String(cell).trim();
+            if (val.includes('RECIBO DE HABERES')) isRecibo = true;
+
+            if (val === 'Apellido y Nombres' || val === 'Apellido y Nombre') {
+              name = String(row[cIdx + 1] || data[rIdx + 1]?.[cIdx] || '').trim();
+            }
+            if (val === 'CUIL:') {
+              cuil = String(row[cIdx + 1] || '').trim();
+            }
+            if (val === 'Tarea') {
+              puesto = String(data[rIdx + 1]?.[cIdx] || '').trim();
+            }
+            if (val === 'Periodo Abonado') {
+              periodo = excelDateToISO(row[cIdx + 1] || data[rIdx + 1]?.[cIdx], month);
+            }
+          });
+        });
+
+        if (isRecibo && (name || cuil)) {
+          items.push({
+            name,
+            cuil,
+            email: '',
+            puesto,
+            periodo,
+          });
+        }
+      }
+    });
+
+    if (items.length === 0) {
+      return res.status(400).json({ error: 'Bad Request', message: 'No se encontraron datos de recibos o empleados en el archivo Excel.' });
     }
+
+    // Obtener lista actual de empleados en Supabase
+    const { data: employees } = await supabaseAdmin
+      .from('employees')
+      .select('id, cuil, email, name');
+
+    const empMap = new Map();
+    (employees || []).forEach((emp) => {
+      if (emp.cuil) empMap.set(String(emp.cuil).trim().replace(/\D/g, ''), emp);
+      if (emp.email) empMap.set(String(emp.email).trim().toLowerCase(), emp);
+      if (emp.name) empMap.set(String(emp.name).trim().toLowerCase(), emp);
+    });
 
     let successCount = 0;
     let failCount = 0;
     let skippedCount = 0;
     const errors = [];
 
-    // Obtener empleados existentes para asociar por CUIL o email
-    const { data: employees } = await supabaseAdmin
-      .from('employees')
-      .select('id, cuil, email, name');
-
-    const empMap = new Map();
-    (employees || []).forEach(emp => {
-      if (emp.cuil) empMap.set(String(emp.cuil).trim().replace(/\D/g, ''), emp);
-      if (emp.email) empMap.set(String(emp.email).trim().toLowerCase(), emp);
-    });
-
-    for (let index = 0; index < rows.length; index++) {
-      const row = rows[index];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       try {
-        const rawCuil = String(row.CUIL || row.cuil || row['CUIL/CUIT'] || '').trim();
-        const rawEmail = String(row.Email || row.email || row.Mail || '').trim().toLowerCase();
-        const rawName = String(row.Nombre || row.nombre || row.Empleado || row.name || 'Empleado Nómina').trim();
-        const rawPeriodo = String(row.Periodo || row.periodo || row.Mes || month || new Date().toISOString().slice(0, 7)).trim();
+        const cleanCuil = String(item.cuil || '').replace(/\D/g, '');
+        const cleanName = String(item.name || '').trim();
+        const cleanEmail = String(item.email || '').trim().toLowerCase();
 
-        const cleanCuil = rawCuil.replace(/\D/g, '');
-        let employee = empMap.get(cleanCuil) || empMap.get(rawEmail);
+        let employee = empMap.get(cleanCuil) || empMap.get(cleanEmail) || empMap.get(cleanName.toLowerCase());
 
-        // Si el empleado no existe en Supabase, crearlo automáticamente
-        if (!employee && (rawCuil || rawEmail)) {
+        // Si el empleado no existe, crearlo automáticamente
+        if (!employee && (cleanCuil || cleanName)) {
+          const defaultCuil = item.cuil || `20-${Math.floor(10000000 + Math.random() * 90000000)}-9`;
+          const defaultEmail = cleanEmail || `${cleanCuil || Date.now()}@empresa.com`;
           const password_hash = await bcrypt.hash(cleanCuil || '123456', 10);
+
           const newEmpData = {
-            cuil: rawCuil || cleanCuil,
-            email: rawEmail || `${cleanCuil}@empresa.com`,
-            name: rawName,
+            cuil: defaultCuil,
+            email: defaultEmail,
+            name: cleanName || 'Empleado Excel',
             password_hash,
             role: 'empleado',
-            puesto: String(row.Puesto || row.puesto || 'Empleado').trim(),
+            puesto: item.puesto || 'Empleado',
             fecha_ingreso: new Date().toISOString().split('T')[0],
             archived: false,
           };
@@ -280,16 +393,18 @@ export const uploadExcelPayslips = async (req, res) => {
           if (createdEmp) {
             employee = createdEmp;
             if (cleanCuil) empMap.set(cleanCuil, employee);
-            if (rawEmail) empMap.set(rawEmail, employee);
+            if (cleanEmail) empMap.set(cleanEmail, employee);
+            empMap.set(cleanName.toLowerCase(), employee);
           }
         }
 
-        const employeeId = employee?.id || `mock-${Date.now()}-${index}`;
+        const employeeId = employee?.id || `mock-${Date.now()}-${i}`;
+        const targetPeriodo = item.periodo || month || new Date().toISOString().slice(0, 7);
 
         const newPayslip = {
           employee_id: employeeId,
-          periodo: rawPeriodo,
-          file_path: `payslips/${employeeId}/${rawPeriodo}.pdf`,
+          periodo: targetPeriodo,
+          file_path: `payslips/${employeeId}/${targetPeriodo}.pdf`,
           file_url: '',
           status: 'pendiente',
         };
@@ -299,22 +414,22 @@ export const uploadExcelPayslips = async (req, res) => {
           .insert([newPayslip]);
 
         if (insertErr) {
-          console.warn('[Excel Import Warning]: Falló insert en Supabase:', insertErr.message);
+          console.warn('[Excel Import Warning]: Falló la inserción en Supabase:', insertErr.message);
         }
         successCount++;
       } catch (errRow) {
         failCount++;
-        errors.push(`Fila ${index + 2}: ${errRow.message}`);
+        errors.push(`Ítem ${i + 1}: ${errRow.message}`);
       }
     }
 
     return res.status(200).json({
-      total: rows.length,
+      total: items.length,
       successCount,
       failCount,
       skippedCount,
       errors,
-      message: `Procesadas ${rows.length} filas del Excel: ${successCount} exitosas, ${failCount} errores.`
+      message: `Procesadas ${items.length} entradas del archivo Excel: ${successCount} exitosas, ${failCount} errores.`,
     });
   } catch (err) {
     console.error('Error en uploadExcelPayslips:', err);
