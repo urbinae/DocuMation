@@ -394,22 +394,30 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
     }
   };
 
-  const filteredPayslips = payslips.filter(p => {
-    const matchMonth = p.month === selectedMonth;
-    const matchStatus = filterStatus === 'Todos' || p.status === filterStatus;
+  const safePayslips = Array.isArray(payslips) ? payslips : [];
 
-    const searchLower = search.toLowerCase();
+  const filteredPayslips = safePayslips.filter(p => {
+    const pMonth = p.month || p.periodo;
+    const matchMonth = !selectedMonth || pMonth === selectedMonth;
+    const matchStatus = filterStatus === 'Todos' || p.status === filterStatus || (filterStatus === 'Pendiente' && p.status === 'pendiente');
+
+    const searchLower = (search || '').toLowerCase();
+    const empName = String(p.employeeName || p.employees?.name || p.employee_name || 'Empleado').toLowerCase();
+    const empCuil = String(p.employeeCuil || p.employees?.cuil || p.employee_cuil || '');
+    const detCuil = String(p.detectedCuil || p.detected_cuil || '');
+
     const matchSearch =
-      p.employeeName.toLowerCase().includes(searchLower) ||
-      (p.employeeCuil && p.employeeCuil.includes(searchLower)) ||
-      (p.detectedCuil && p.detectedCuil.includes(searchLower));
+      !searchLower ||
+      empName.includes(searchLower) ||
+      empCuil.includes(searchLower) ||
+      detCuil.includes(searchLower);
 
     return matchMonth && matchStatus && matchSearch;
   });
 
-  const totalInPeriod = payslips.filter(p => p.month === selectedMonth).length;
-  const signedInPeriod = payslips.filter(p => p.month === selectedMonth && p.status === 'Firmado').length;
-  const sentInPeriod = payslips.filter(p => p.month === selectedMonth && p.status === 'Enviado').length;
+  const totalInPeriod = safePayslips.filter(p => (p.month || p.periodo) === selectedMonth).length;
+  const signedInPeriod = safePayslips.filter(p => (p.month || p.periodo) === selectedMonth && (p.status === 'Firmado' || p.status === 'firmado')).length;
+  const sentInPeriod = safePayslips.filter(p => (p.month || p.periodo) === selectedMonth && (p.status === 'Enviado' || p.status === 'enviado')).length;
   const pendingInPeriod = totalInPeriod - signedInPeriod;
 
   const handleBulkSend = async () => {
@@ -646,9 +654,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                     return (
                       <tr key={ps.id}>
                         <td>
-                          <div style={{ fontWeight: '600' }}>{ps.employeeName}</div>
+                          <div style={{ fontWeight: '600' }}>{ps.employeeName || ps.employees?.name || ps.employee_name || 'Empleado Sin Asignar'}</div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                            CUIL: {ps.employeeCuil || ps.detectedCuil || 'No detectado'}
+                            CUIL: {ps.employeeCuil || ps.employees?.cuil || ps.employee_cuil || ps.detectedCuil || 'No detectado'}
                           </div>
 
                           {!ps.employeeId && (
