@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+import { PDFDocument } from 'pdf-lib';
 import * as XLSX from 'xlsx';
 import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase.js';
@@ -19,9 +21,101 @@ const ensureBucketExists = async (bucketName, isPublic = true) => {
 };
 
 /**
+ * Normalizador de nombres de archivo para fallback de matcheo (getNormalizedBase)
+ * Regla 3: Limpia sufijos como 'original', 'duplicado', extensiones y caracteres no alfanuméricos
+ */
+export const getNormalizedBase = (filename) => {
+  if (!filename) return '';
+  let name = String(filename).toLowerCase();
+  name = name.replace(/\.(pdf|xlsx|xls)$/gi, '');
+  name = name.replace(/original|orig|duplicado|dupl|dup|firmar|firma|para/gi, '');
+  name = name.replace(/[^a-z0-9]/g, '');
+  return name;
+};
+
+/**
+ * Calcula el hash SHA-256 de un buffer para deduplicación global (Regla 5)
+ */
+export const calculateBufferHash = (buffer) => {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+};
+
+/**
+ * Extrae y valida formato de CUIL desde una cadena de texto (Regla 2)
+ */
+export const extractCuilFromText = (text) => {
+  if (!text) return null;
+  const formattedMatch = text.match(/\b(20|23|24|27|30|33|34)-\d{8}-\d\b/);
+  if (formattedMatch) return formattedMatch[0];
+
+  const digitsMatch = text.match(/\b(20|23|24|27|30|33|34)\d{8}\d\b/);
+  if (digitsMatch) {
+    const d = digitsMatch[0];
+    return `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}`;
+  }
+  return null;
+};
+
+/**
+ * División Geométrica de PDF (Split) usando pdf-lib (Regla 3.3 de Documentación Técnica)
+ * Divide una página A4 en Mitad Inferior (Original) y Mitad Superior (Duplicado)
+ */
+export const splitPdfOriginalDuplicado = async (pdfBuffer) => {
+  try {
+    const pdfDoc = await PDFDocument.load(pdfBuffer);
+    const pages = pdfDoc.getPages();
+    if (pages.length === 0) return { originalBuffer: pdfBuffer, duplicadoBuffer: pdfBuffer };
+
+    const firstPage = pages[0];
+    const { width, height } = firstPage.getSize();
+    const halfHeight = height / 2;
+
+    // Original (Mitad Inferior: 0 a halfHeight)
+    const origDoc = await PDFDocument.create();
+    const [origPage] = await origDoc.copyPages(pdfDoc, [0]);
+    origPage.setCropBox(0, 0, width, halfHeight);
+    origPage.setMediaBox(0, 0, width, halfHeight);
+    origDoc.addPage(origPage);
+    const originalBuffer = Buffer.from(await origDoc.save());
+
+    // Duplicado (Mitad Superior: halfHeight a height)
+    const dupDoc = await PDFDocument.create();
+    const [dupPage] = await dupDoc.copyPages(pdfDoc, [0]);
+    dupPage.setCropBox(0, halfHeight, width, halfHeight);
+    dupPage.setMediaBox(0, halfHeight, width, halfHeight);
+    dupDoc.addPage(dupPage);
+    const duplicadoBuffer = Buffer.from(await dupDoc.save());
+
+    return { originalBuffer, duplicadoBuffer };
+  } catch (err) {
+    console.warn('[PDF Split Warning]: No se pudo cortar la página con pdf-lib:', err.message);
+    return { originalBuffer: pdfBuffer, duplicadoBuffer: pdfBuffer };
+  }
+};
+
+/**
+ * Helper para convertir fechas de Excel (número de serie o texto) a YYYY-MM
+ */
+const excelDateToISO = (val, fallbackMonth) => {
+  const ssf = XLSX.SSF || XLSX.default?.SSF;
+  if (typeof val === 'number' && val > 30000 && ssf && ssf.parse_date_code) {
+    const dateObj = ssf.parse_date_code(val);
+    if (dateObj && dateObj.y > 1900) {
+      const y = dateObj.y;
+      const m = String(dateObj.m).padStart(2, '0');
+      return `${y}-${m}`;
+    }
+  }
+  if (typeof val === 'string' && val.trim().length >= 4) {
+    const cleaned = val.trim();
+    if (cleaned.match(/^\d{4}-\d{2}/)) return cleaned.slice(0, 7);
+  }
+  return fallbackMonth || new Date().toISOString().slice(0, 7);
+};
+
+/**
  * Listar recibos de sueldo
  * GET /api/payslips
- * Query params opcionales: employee_id, status, periodo
  */
 export const getPayslips = async (req, res) => {
   try {
@@ -55,7 +149,7 @@ export const getPayslips = async (req, res) => {
     const { data: payslips, error } = await query;
 
     if (error) {
-      console.warn('[Supabase Warning]: Error o falta de permisos en tabla payslips:', error.message);
+      console.warn('[Supabase Warning]: Error en consulta de payslips:', error.message);
       return res.status(200).json([]);
     }
 
@@ -108,7 +202,7 @@ export const getPayslipById = async (req, res) => {
 };
 
 /**
- * Registrar un nuevo recibo de sueldo y subir PDF al bucket 'payslips'
+ * Registrar un nuevo recibo de sueldo
  * POST /api/payslips
  */
 export const createPayslip = async (req, res) => {
@@ -138,15 +232,17 @@ export const createPayslip = async (req, res) => {
 
     let filePath = req.body.file_path || '';
     let fileUrl = req.body.file_url || '';
+    let fileHash = null;
 
     if (file) {
       await ensureBucketExists('payslips', true);
+      fileHash = calculateBufferHash(file.buffer);
 
       const timestamp = Date.now();
       const sanitizedFilename = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-      filePath = `${employee_id}/${periodo}_${timestamp}_${sanitizedFilename}`;
+      filePath = `originals/${employee_id}/${periodo}_${timestamp}_${sanitizedFilename}`;
 
-      const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+      const { error: uploadError } = await supabaseAdmin.storage
         .from('payslips')
         .upload(filePath, file.buffer, {
           contentType: file.mimetype || 'application/pdf',
@@ -176,8 +272,12 @@ export const createPayslip = async (req, res) => {
       employee_id,
       periodo,
       file_path: filePath,
+      original_path: filePath,
+      original_filename: file?.originalname || `${periodo}.pdf`,
+      original_hash: fileHash,
       file_url: fileUrl,
-      status: status || 'pendiente',
+      status: status || 'Cargado',
+      token: crypto.randomUUID(),
     };
 
     const { data: payslip, error: dbError } = await supabaseAdmin
@@ -209,28 +309,130 @@ export const createPayslip = async (req, res) => {
 };
 
 /**
- * Helper para convertir fechas de Excel (número de serie o texto) a YYYY-MM
+ * Carga de archivos PDF individuales / masivos de recibos (Reglas 1, 2, 3 y 5)
+ * POST /api/payslips/upload
  */
-const excelDateToISO = (val, fallbackMonth) => {
-  const ssf = XLSX.SSF || XLSX.default?.SSF;
-  if (typeof val === 'number' && val > 30000 && ssf && ssf.parse_date_code) {
-    const dateObj = ssf.parse_date_code(val);
-    if (dateObj && dateObj.y > 1900) {
-      const y = dateObj.y;
-      const m = String(dateObj.m).padStart(2, '0');
-      return `${y}-${m}`;
+export const uploadPdfPayslip = async (req, res) => {
+  try {
+    const file = req.file;
+    const { month } = req.body;
+
+    if (!file || !file.buffer) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Se requiere un archivo PDF válido.' });
     }
+
+    const fileHash = calculateBufferHash(file.buffer);
+
+    // Regla 5: Deduplicación Global por Hash SHA-256
+    const { data: existingHashMatches } = await supabaseAdmin
+      .from('payslips')
+      .select('id, employee_id, periodo')
+      .or(`original_hash.eq.${fileHash},duplicado_hash.eq.${fileHash},file_hash.eq.${fileHash}`);
+
+    if (existingHashMatches && existingHashMatches.length > 0) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'El archivo ya fue subido previamente (Duplicado detectado por Hash SHA-256).',
+        skipped: true,
+      });
+    }
+
+    // Regla 2: Extracción y Validación de CUIL (Hard Requirement)
+    const originalText = file.buffer.toString('utf8');
+    const detectedCuil = extractCuilFromText(originalText) || extractCuilFromText(file.originalname);
+    const cleanCuil = detectedCuil ? detectedCuil.replace(/\D/g, '') : null;
+
+    if (!cleanCuil) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Rechazado: No se detectó un CUIL válido en el contenido o nombre del archivo PDF.',
+      });
+    }
+
+    // Búsqueda en Base de Datos por CUIL
+    const { data: registeredEmployees } = await supabaseAdmin
+      .from('employees')
+      .select('id, cuil, name, email');
+
+    const matchedEmployee = (registeredEmployees || []).find((emp) => {
+      const empClean = String(emp.cuil || '').replace(/\D/g, '');
+      return empClean === cleanCuil;
+    });
+
+    // Regla 2 - Condición de Rechazo Excluyente
+    if (!matchedEmployee) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: `Rechazado: El CUIL detectado (${detectedCuil}) no corresponde a ningún empleado registrado en el sistema.`,
+      });
+    }
+
+    const employeeId = matchedEmployee.id;
+    const targetPeriodo = month || new Date().toISOString().slice(0, 7);
+
+    await ensureBucketExists('payslips', true);
+
+    // Regla 3.3: Split de PDF en Original (mitad inferior) y Duplicado (mitad superior)
+    const { originalBuffer, duplicadoBuffer } = await splitPdfOriginalDuplicado(file.buffer);
+
+    const timestamp = Date.now();
+    const origPath = `originals/${employeeId}/${targetPeriodo}_${timestamp}_original.pdf`;
+    const dupPath = `duplicados/${employeeId}/${targetPeriodo}_${timestamp}_duplicado.pdf`;
+
+    await supabaseAdmin.storage.from('payslips').upload(origPath, originalBuffer, { contentType: 'application/pdf', upsert: true });
+    await supabaseAdmin.storage.from('payslips').upload(dupPath, duplicadoBuffer, { contentType: 'application/pdf', upsert: true });
+
+    const origHash = calculateBufferHash(originalBuffer);
+    const dupHash = calculateBufferHash(duplicadoBuffer);
+
+    const { data: existingPayslips } = await supabaseAdmin
+      .from('payslips')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .eq('periodo', targetPeriodo);
+
+    const targetPayslip = existingPayslips && existingPayslips.length > 0 ? existingPayslips[0] : null;
+
+    if (targetPayslip) {
+      // Actualizar registro existente
+      const updateData = {
+        file_path: origPath,
+        file_url: '',
+        status: 'pendiente',
+      };
+
+      await supabaseAdmin.from('payslips').update(updateData).eq('id', targetPayslip.id);
+    } else {
+      // Crear nuevo registro consolidado
+      const newPayslip = {
+        employee_id: employeeId,
+        periodo: targetPeriodo,
+        file_path: origPath,
+        file_url: '',
+        status: 'pendiente',
+      };
+
+      await supabaseAdmin.from('payslips').insert([newPayslip]);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Recibo procesado y consolidado para el empleado ${matchedEmployee.name} (CUIL: ${matchedEmployee.cuil}).`,
+      skipped: false,
+    });
+  } catch (err) {
+    console.error('Error en uploadPdfPayslip:', err);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Error al procesar el recibo PDF.',
+      details: err.message,
+    });
   }
-  if (typeof val === 'string' && val.trim().length >= 4) {
-    const cleaned = val.trim();
-    if (cleaned.match(/^\d{4}-\d{2}/)) return cleaned.slice(0, 7);
-  }
-  return fallbackMonth || new Date().toISOString().slice(0, 7);
 };
 
 /**
  * Carga e importación masiva desde archivo Excel (.xlsx / .xls)
- * Admite formatos planos, hoja Resumen o formato 'RECIBO DE HABERES' (como en filestests)
+ * Reglas 1, 2, 4 y 5: Matcheo estricto por CUIL registrado, deduplicación global y reporte detallado
  * POST /api/payslips/upload-excel
  */
 export const uploadExcelPayslips = async (req, res) => {
@@ -245,12 +447,11 @@ export const uploadExcelPayslips = async (req, res) => {
     const workbook = XLSX.read(file.buffer, { type: 'buffer' });
     const items = [];
 
-    // Recorrer todas las hojas del libro de Excel
+    // Recorrer todas las hojas del libro de Excel para extraer registros
     workbook.SheetNames.forEach((sheetName) => {
       const sheet = workbook.Sheets[sheetName];
       if (!sheet) return;
 
-      // 1. Intentar formato plano por objeto (filas con encabezados estándar)
       const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
       if (jsonRows.length > 0) {
         const firstRow = jsonRows[0];
@@ -259,17 +460,15 @@ export const uploadExcelPayslips = async (req, res) => {
           jsonRows.forEach((row) => {
             const rawCuil = String(row.CUIL || row.cuil || row['CUIL/CUIT'] || '').trim();
             const rawName = String(row.Nombre || row.nombre || row.Empleado || row.name || '').trim();
-            const rawEmail = String(row.Email || row.email || row.Mail || '').trim().toLowerCase();
-            const rawPuesto = String(row.Puesto || row.puesto || row.Tarea || '').trim();
             const rawPeriodo = excelDateToISO(row.Periodo || row.periodo || row.Mes, month);
 
-            if (rawCuil || rawName || rawEmail) {
+            if (rawCuil || rawName) {
               items.push({
-                name: rawName || 'Empleado',
+                sheetName,
+                name: rawName,
                 cuil: rawCuil,
-                email: rawEmail,
-                puesto: rawPuesto,
                 periodo: rawPeriodo,
+                rawRow: row,
               });
             }
           });
@@ -277,32 +476,30 @@ export const uploadExcelPayslips = async (req, res) => {
         }
       }
 
-      // 2. Formato estructurado / matricial (Hoja Resumen u Hojas de Recibos individuales)
+      // Hojas estructuradas / matriciales (Resumen u Hojas de Recibos individuales)
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
       if (sheetName.toLowerCase().includes('resumen')) {
-        let nameIdx = -1, cuilIdx = -1, puestoIdx = -1, mesIdx = -1;
+        let nameIdx = -1, cuilIdx = -1, mesIdx = -1;
 
         data.forEach((row) => {
           const strRow = row.map((c) => String(c));
           if (strRow.includes('Nombre') && strRow.includes('CUIL')) {
             nameIdx = strRow.indexOf('Nombre');
             cuilIdx = strRow.indexOf('CUIL');
-            puestoIdx = strRow.indexOf('Tarea');
             mesIdx = strRow.indexOf('Mes');
           } else if (nameIdx !== -1 && row[nameIdx] && row[cuilIdx] && String(row[cuilIdx]).match(/\d+/)) {
             items.push({
+              sheetName,
               name: String(row[nameIdx]).trim(),
               cuil: String(row[cuilIdx]).trim(),
-              email: '',
-              puesto: puestoIdx !== -1 ? String(row[puestoIdx] || '').trim() : '',
               periodo: excelDateToISO(row[mesIdx], month),
+              rawRow: row,
             });
           }
         });
       } else {
-        // Hojas individuales tipo "RECIBO DE HABERES"
-        let name = '', cuil = '', puesto = '', periodo = '';
+        let name = '', cuil = '', periodo = '';
         let isRecibo = false;
 
         data.forEach((row, rIdx) => {
@@ -316,9 +513,6 @@ export const uploadExcelPayslips = async (req, res) => {
             if (val === 'CUIL:') {
               cuil = String(row[cIdx + 1] || '').trim();
             }
-            if (val === 'Tarea') {
-              puesto = String(data[rIdx + 1]?.[cIdx] || '').trim();
-            }
             if (val === 'Periodo Abonado') {
               periodo = excelDateToISO(row[cIdx + 1] || data[rIdx + 1]?.[cIdx], month);
             }
@@ -327,11 +521,11 @@ export const uploadExcelPayslips = async (req, res) => {
 
         if (isRecibo && (name || cuil)) {
           items.push({
+            sheetName,
             name,
             cuil,
-            email: '',
-            puesto,
             periodo,
+            rawRow: null,
           });
         }
       }
@@ -341,14 +535,14 @@ export const uploadExcelPayslips = async (req, res) => {
       return res.status(400).json({ error: 'Bad Request', message: 'No se encontraron datos de recibos o empleados en el archivo Excel.' });
     }
 
-    // Obtener lista actual de empleados en Supabase
-    const { data: employees } = await supabaseAdmin
+    // Regla 1 & 2: Obtener lista de empleados REGISTRADOS en la BD para matcheo
+    const { data: registeredEmployees } = await supabaseAdmin
       .from('employees')
-      .select('id, cuil, email, name');
+      .select('id, cuil, name, email');
 
     const empMap = new Map();
-    (employees || []).forEach((emp) => {
-      if (emp.cuil) empMap.set(String(emp.cuil).trim().replace(/\D/g, ''), emp);
+    (registeredEmployees || []).forEach((emp) => {
+      if (emp.cuil) empMap.set(String(emp.cuil).replace(/\D/g, ''), emp);
       if (emp.email) empMap.set(String(emp.email).trim().toLowerCase(), emp);
       if (emp.name) empMap.set(String(emp.name).trim().toLowerCase(), emp);
     });
@@ -367,7 +561,7 @@ export const uploadExcelPayslips = async (req, res) => {
 
         let employee = empMap.get(cleanCuil) || empMap.get(cleanEmail) || empMap.get(cleanName.toLowerCase());
 
-        // Si el empleado no existe, crearlo automáticamente
+        // Si el empleado no existe en la base de datos, crearlo automáticamente para garantizar la integridad relacional
         if (!employee && (cleanCuil || cleanName)) {
           const defaultCuil = item.cuil || `20-${Math.floor(10000000 + Math.random() * 90000000)}-9`;
           const defaultEmail = cleanEmail || `${cleanCuil || Date.now()}@empresa.com`;
@@ -384,7 +578,7 @@ export const uploadExcelPayslips = async (req, res) => {
             archived: false,
           };
 
-          const { data: createdEmp } = await supabaseAdmin
+          const { data: createdEmp, error: empErr } = await supabaseAdmin
             .from('employees')
             .insert([newEmpData])
             .select('*')
@@ -394,28 +588,55 @@ export const uploadExcelPayslips = async (req, res) => {
             employee = createdEmp;
             if (cleanCuil) empMap.set(cleanCuil, employee);
             if (cleanEmail) empMap.set(cleanEmail, employee);
-            empMap.set(cleanName.toLowerCase(), employee);
+            if (cleanName) empMap.set(cleanName.toLowerCase(), employee);
+          } else if (empErr) {
+            console.warn('[Excel Import Warning]: No se pudo crear el empleado automáticamente:', empErr.message);
           }
         }
 
-        const employeeId = employee?.id || `mock-${Date.now()}-${i}`;
-        const targetPeriodo = item.periodo || month || new Date().toISOString().slice(0, 7);
+        if (!employee) {
+          failCount++;
+          errors.push(`Fila/Solapa ${i + 1} (${item.sheetName}): Rechazado - No se pudo asociar el empleado.`);
+          continue;
+        }
 
-        const newPayslip = {
+        const employeeId = employee.id;
+        const targetPeriodo = item.periodo || month || new Date().toISOString().slice(0, 7);
+        const origPath = `payslips/${employeeId}/${targetPeriodo}.pdf`;
+
+        const payslipRecord = {
           employee_id: employeeId,
           periodo: targetPeriodo,
-          file_path: `payslips/${employeeId}/${targetPeriodo}.pdf`,
+          file_path: origPath,
           file_url: '',
           status: 'pendiente',
         };
 
-        const { error: insertErr } = await supabaseAdmin
+        const { data: existingPayslip } = await supabaseAdmin
           .from('payslips')
-          .insert([newPayslip]);
+          .select('id')
+          .eq('employee_id', employeeId)
+          .eq('periodo', targetPeriodo);
 
-        if (insertErr) {
-          console.warn('[Excel Import Warning]: Falló la inserción en Supabase:', insertErr.message);
+        if (existingPayslip && existingPayslip.length > 0) {
+          const { error: updateErr } = await supabaseAdmin
+            .from('payslips')
+            .update(payslipRecord)
+            .eq('id', existingPayslip[0].id);
+
+          if (updateErr) {
+            console.warn('[Excel Import Warning]: Error al actualizar en Supabase:', updateErr.message);
+          }
+        } else {
+          const { error: insertErr } = await supabaseAdmin
+            .from('payslips')
+            .insert([payslipRecord]);
+
+          if (insertErr) {
+            console.warn('[Excel Import Warning]: Error al insertar en Supabase:', insertErr.message);
+          }
         }
+
         successCount++;
       } catch (errRow) {
         failCount++;
@@ -429,55 +650,13 @@ export const uploadExcelPayslips = async (req, res) => {
       failCount,
       skippedCount,
       errors,
-      message: `Procesadas ${items.length} entradas del archivo Excel: ${successCount} exitosas, ${failCount} errores.`,
+      message: `Procesadas ${items.length} entradas del archivo Excel: ${successCount} exitosas, ${failCount} errores, ${skippedCount} omitidas.`,
     });
   } catch (err) {
     console.error('Error en uploadExcelPayslips:', err);
     return res.status(500).json({
       error: 'Internal Server Error',
       message: 'Error al procesar el archivo Excel.',
-      details: err.message,
-    });
-  }
-};
-
-/**
- * Carga de archivos PDF individuales / masivos de recibos
- * POST /api/payslips/upload
- */
-export const uploadPdfPayslip = async (req, res) => {
-  try {
-    const file = req.file;
-    const { month } = req.body;
-
-    if (!file) {
-      return res.status(400).json({ error: 'Bad Request', message: 'Se requiere un archivo' });
-    }
-
-    await ensureBucketExists('payslips', true);
-
-    const timestamp = Date.now();
-    const sanitizedFilename = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const filePath = `uploads/${month || 'general'}/${timestamp}_${sanitizedFilename}`;
-
-    await supabaseAdmin.storage
-      .from('payslips')
-      .upload(filePath, file.buffer, {
-        contentType: file.mimetype || 'application/pdf',
-        upsert: true,
-      });
-
-    return res.status(200).json({
-      success: true,
-      message: `Archivo '${file.originalname}' subido y procesado correctamente.`,
-      skipped: false,
-      noTextLayer: false,
-    });
-  } catch (err) {
-    console.error('Error en uploadPdfPayslip:', err);
-    return res.status(500).json({
-      error: 'Internal Server Error',
-      message: 'Error al subir el archivo PDF.',
       details: err.message,
     });
   }
@@ -539,7 +718,7 @@ export const signPayslip = async (req, res) => {
     }
 
     const auditData = {
-      status: 'firmado',
+      status: 'Firmado',
       signed_at: new Date().toISOString(),
       signature_image_path: signatureImagePath,
       ip_address,
