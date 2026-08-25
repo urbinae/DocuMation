@@ -8,11 +8,11 @@ const code = fs.readFileSync(appFile, 'utf-8');
 function extractFunction(startKeyword) {
     const startIdx = code.indexOf(startKeyword);
     if (startIdx === -1) return null;
-
+    
     let openBraces = 0;
     let started = false;
     let endIdx = -1;
-
+    
     for (let i = startIdx; i < code.length; i++) {
         if (code[i] === '{') {
             openBraces++;
@@ -25,7 +25,7 @@ function extractFunction(startKeyword) {
             }
         }
     }
-
+    
     if (endIdx !== -1) {
         return code.substring(startIdx, endIdx + 1);
     }
@@ -63,7 +63,7 @@ import ThemeToggle from './shared/ThemeToggle';
 import AccessHub from './shared/AccessHub';
 
 pdfjs.GlobalWorkerOptions.workerSrc = \`//unpkg.com/pdfjs-dist@\${pdfjs.version}/build/pdf.worker.min.mjs\`;
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 ${appComponent}
 `;

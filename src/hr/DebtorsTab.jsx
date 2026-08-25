@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Users, Mail, AlertTriangle, Send, CheckCircle } from 'lucide-react';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 export default function DebtorsTab({ payslips, employees, refreshData, triggerAlert }) {
   const [isSending, setIsSending] = useState(false);
@@ -22,7 +22,7 @@ export default function DebtorsTab({ payslips, employees, refreshData, triggerAl
         totalDelayDays: 0
       };
     }
-
+    
     // Calcular días de atraso
     let delayDays = 0;
     if (p.sentAt) {
@@ -30,7 +30,7 @@ export default function DebtorsTab({ payslips, employees, refreshData, triggerAl
       const now = new Date();
       delayDays = Math.floor((now - sentDate) / (1000 * 60 * 60 * 24));
     }
-
+    
     groupedDebtors[p.employeeId].payslips.push({ ...p, delayDays });
     groupedDebtors[p.employeeId].totalDelayDays += delayDays;
   });
@@ -43,7 +43,7 @@ export default function DebtorsTab({ payslips, employees, refreshData, triggerAl
   const handleSendReminder = async (employeeId) => {
     const debtor = groupedDebtors[employeeId];
     if (!debtor) return;
-
+    
     setIsSending(true);
     try {
       const ids = debtor.payslips.map(p => p.id);
@@ -69,7 +69,7 @@ export default function DebtorsTab({ payslips, employees, refreshData, triggerAl
         <AlertTriangle color="var(--warning)" size={24} />
         <h3 style={{ margin: 0 }}>Empleados Deudores de Firma</h3>
       </div>
-
+      
       <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
         Esta pestaña muestra a los empleados que tienen recibos enviados pero aún no los han firmado.
       </p>
@@ -112,7 +112,7 @@ export default function DebtorsTab({ payslips, employees, refreshData, triggerAl
                     </div>
                   </td>
                   <td>
-                    <span style={{
+                    <span style={{ 
                       color: debtor.avgDelay > 7 ? 'var(--danger)' : debtor.avgDelay > 3 ? 'var(--warning)' : 'var(--text-primary)',
                       fontWeight: debtor.avgDelay > 3 ? 'bold' : 'normal'
                     }}>
@@ -120,8 +120,8 @@ export default function DebtorsTab({ payslips, employees, refreshData, triggerAl
                     </span>
                   </td>
                   <td>
-                    <button
-                      className="btn btn-secondary"
+                    <button 
+                      className="btn btn-secondary" 
                       style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
                       onClick={() => handleSendReminder(debtor.employeeId)}
                       disabled={isSending}

@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  FileText, Users, Settings, Upload, CheckCircle,
-  Clock, Mail, Download, Trash2, Send, Plus,
+import { 
+  FileText, Users, Settings, Upload, CheckCircle, 
+  Clock, Mail, Download, Trash2, Send, Plus, 
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 import ThemeToggle from '../shared/ThemeToggle';
 import DashboardTab from './DashboardTab';
@@ -34,34 +34,16 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
     googleClientId: '',
     googleAllowedDomain: ''
   });
-
+  
   const [alert, setAlert] = useState(null);
 
   const fetchEmployees = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/employees`);
-      if (res.ok) {
-        const data = await res.json();
-        setEmployees(data);
-        return;
-      }
+      const data = await res.json();
+      setEmployees(data);
     } catch (e) {
       console.error(e);
-    }
-    const saved = localStorage.getItem('mock_employees');
-    if (saved) {
-      try {
-        setEmployees(JSON.parse(saved));
-      } catch (err) {
-        setEmployees([]);
-      }
-    } else {
-      const defaultEmps = [
-        { id: 1, name: 'Juan Pérez', email: 'juan.perez@empresa.com', cuil: '20-12345678-9', role: 'empleado', puesto: 'Desarrollador', fechaIngreso: '2023-01-15', archived: false },
-        { id: 2, name: 'María Gómez', email: 'maria.gomez@empresa.com', cuil: '27-98765432-1', role: 'rrhh', puesto: 'Analista de RRHH', fechaIngreso: '2022-05-10', archived: false }
-      ];
-      setEmployees(defaultEmps);
-      localStorage.setItem('mock_employees', JSON.stringify(defaultEmps));
     }
   };
 
@@ -119,42 +101,42 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
           </span>
         </div>
         <div className="nav-links">
-          <button
+          <button 
             className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
             onClick={() => setActiveTab('dashboard')}
           >
             <BarChart2 size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Dashboard KPIs
           </button>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'recibos' ? 'active' : ''}`}
             onClick={() => setActiveTab('recibos')}
           >
             <FileText size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Recibos de Sueldo
           </button>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'empleados' ? 'active' : ''}`}
             onClick={() => setActiveTab('empleados')}
           >
             <Users size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Nómina de Empleados
           </button>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'config' ? 'active' : ''}`}
             onClick={() => setActiveTab('config')}
           >
             <Settings size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Configuración
           </button>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'deudores' ? 'active' : ''}`}
             onClick={() => setActiveTab('deudores')}
           >
             <AlertTriangle size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Deudores
           </button>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'riesgo' ? 'active' : ''}`}
             onClick={() => setActiveTab('riesgo')}
           >
@@ -162,7 +144,7 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
             Riesgo
           </button>
           <ThemeToggle theme={theme} toggleTheme={toggleTheme} />
-
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px', marginRight: '4px', borderLeft: '1px solid var(--border-color)', paddingLeft: '16px', height: '24px' }}>
             <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
               Hola, <strong style={{ color: 'var(--text-primary)' }}>{hrSession && hrSession.employee ? hrSession.employee.name : 'Administrador'}</strong>
@@ -179,14 +161,14 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
               {hrSession && hrSession.employee ? 'RRHH' : 'Master'}
             </span>
             {hrSession && hrSession.employee && (
-              <button
-                className="btn btn-secondary"
+              <button 
+                className="btn btn-secondary" 
                 onClick={switchToEmployeeView}
-                style={{
-                  padding: '4px 10px',
-                  fontSize: '11px',
-                  display: 'flex',
-                  alignItems: 'center',
+                style={{ 
+                  padding: '4px 10px', 
+                  fontSize: '11px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
                   gap: '4px',
                   marginLeft: '8px',
                   background: 'rgba(255,255,255,0.05)'
@@ -199,7 +181,7 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
             )}
           </div>
 
-          <button
+          <button 
             className="nav-link"
             style={{ color: 'var(--danger)', marginLeft: '12px' }}
             onClick={handleLogout}
@@ -219,33 +201,33 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
         )}
 
         {activeTab === 'dashboard' && (
-          <DashboardTab
-            payslips={payslips}
-            employees={employees}
+          <DashboardTab 
+            payslips={payslips} 
+            employees={employees} 
             refreshData={fetchPayslips}
             triggerAlert={triggerAlert}
           />
         )}
 
         {activeTab === 'recibos' && (
-          <PayslipsTab
-            payslips={payslips}
-            employees={employees}
+          <PayslipsTab 
+            payslips={payslips} 
+            employees={employees} 
             refreshData={fetchPayslips}
-            triggerAlert={triggerAlert}
+            triggerAlert={triggerAlert} 
           />
         )}
-
+        
         {activeTab === 'empleados' && (
-          <EmployeesTab
-            employees={employees}
+          <EmployeesTab 
+            employees={employees} 
             refreshData={fetchEmployees}
             triggerAlert={triggerAlert}
           />
         )}
 
         {activeTab === 'config' && (
-          <ConfigTab
+          <ConfigTab 
             companyName={companyName}
             setCompanyName={setCompanyName}
             smtpSettings={smtpSettings}
@@ -256,7 +238,7 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
         )}
 
         {activeTab === 'deudores' && (
-          <DebtorsTab
+          <DebtorsTab 
             payslips={payslips}
             employees={employees}
             refreshData={fetchPayslips}
@@ -265,7 +247,7 @@ export default function HRDashboard({ hrSession, activeTab, setActiveTab, handle
         )}
 
         {activeTab === 'riesgo' && (
-          <RiskTab
+          <RiskTab 
             payslips={payslips}
             employees={employees}
           />

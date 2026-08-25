@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  FileText, Users, Settings, Upload, CheckCircle,
-  Clock, Mail, Download, Trash2, Send, Plus,
+import { 
+  FileText, Users, Settings, Upload, CheckCircle, 
+  Clock, Mail, Download, Trash2, Send, Plus, 
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
   const [name, setName] = useState('');
@@ -18,7 +18,7 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
   const [puesto, setPuesto] = useState('');
   const [fechaIngreso, setFechaIngreso] = useState('');
   const [editingId, setEditingId] = useState(null);
-
+  
   const [csvText, setCsvText] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -31,35 +31,13 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
     }
 
     try {
-      let apiSuccess = false;
-      try {
-        const res = await fetch(`${API_BASE}/api/employees`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: editingId, name, email, cuil, password: password || undefined, role, puesto, fechaIngreso })
-        });
-        if (res.ok) apiSuccess = true;
-      } catch (err) {}
-
-      // Fallback a almacenamiento local si no hay backend activo
-      if (!apiSuccess) {
-        let currentEmps = [];
-        try {
-          const saved = localStorage.getItem('mock_employees');
-          currentEmps = saved ? JSON.parse(saved) : (employees || []);
-        } catch (e) {
-          currentEmps = employees || [];
-        }
-
-        if (editingId) {
-          currentEmps = currentEmps.map(emp => emp.id === editingId ? { ...emp, name, email, cuil, password: password || undefined, role, puesto, fechaIngreso } : emp);
-        } else {
-          const newEmp = { id: Date.now(), name, email, cuil, password: password || undefined, role, puesto, fechaIngreso, archived: false };
-          currentEmps.push(newEmp);
-        }
-        localStorage.setItem('mock_employees', JSON.stringify(currentEmps));
-      }
-
+      const res = await fetch(`${API_BASE}/api/employees`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingId, name, email, cuil, password: password || undefined, role, puesto, fechaIngreso })
+      });
+      if (!res.ok) throw new Error('Error al guardar empleado');
+      
       triggerAlert('success', editingId ? 'Empleado actualizado correctamente.' : 'Empleado creado correctamente.');
       setName('');
       setEmail('');
@@ -89,24 +67,8 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
   const handleDelete = async (id) => {
     if (!window.confirm("¿Seguro que deseas eliminar definitivamente este empleado?")) return;
     try {
-      let apiSuccess = false;
-      try {
-        const res = await fetch(`${API_BASE}/api/employees/${id}`, { method: 'DELETE' });
-        if (res.ok) apiSuccess = true;
-      } catch (err) {}
-
-      if (!apiSuccess) {
-        let currentEmps = [];
-        try {
-          const saved = localStorage.getItem('mock_employees');
-          currentEmps = saved ? JSON.parse(saved) : (employees || []);
-        } catch (e) {
-          currentEmps = employees || [];
-        }
-        currentEmps = currentEmps.filter(emp => emp.id !== id);
-        localStorage.setItem('mock_employees', JSON.stringify(currentEmps));
-      }
-
+      const res = await fetch(`${API_BASE}/api/employees/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Error al eliminar');
       triggerAlert('success', 'Empleado eliminado definitivamente.');
       refreshData();
     } catch (err) {
@@ -116,28 +78,12 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
 
   const handleArchive = async (id, currentArchived) => {
     try {
-      let apiSuccess = false;
-      try {
-        const res = await fetch(`${API_BASE}/api/employees/${id}/archive`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ archived: !currentArchived })
-        });
-        if (res.ok) apiSuccess = true;
-      } catch (err) {}
-
-      if (!apiSuccess) {
-        let currentEmps = [];
-        try {
-          const saved = localStorage.getItem('mock_employees');
-          currentEmps = saved ? JSON.parse(saved) : (employees || []);
-        } catch (e) {
-          currentEmps = employees || [];
-        }
-        currentEmps = currentEmps.map(emp => emp.id === id ? { ...emp, archived: !currentArchived } : emp);
-        localStorage.setItem('mock_employees', JSON.stringify(currentEmps));
-      }
-
+      const res = await fetch(`${API_BASE}/api/employees/${id}/archive`, { 
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived: !currentArchived })
+      });
+      if (!res.ok) throw new Error('Error al archivar');
       triggerAlert('success', !currentArchived ? 'Empleado archivado.' : 'Empleado restaurado.');
       refreshData();
     } catch (err) {
@@ -153,21 +99,19 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
 
     const lines = csvText.split('\n');
     const importedEmployees = [];
-
+    
     lines.forEach(line => {
       const parts = line.split(',');
       if (parts.length >= 3) {
         const namePart = parts[0].trim();
         const emailPart = parts[1].trim();
         const cuilPart = parts[2].trim();
-
+        
         if (namePart.toLowerCase() !== 'nombre' && emailPart.includes('@')) {
           importedEmployees.push({
-            id: Date.now() + Math.random(),
             name: namePart,
             email: emailPart,
-            cuil: cuilPart,
-            archived: false
+            cuil: cuilPart
           });
         }
       }
@@ -179,29 +123,15 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
     }
 
     try {
-      let apiSuccess = false;
-      try {
-        const res = await fetch(`${API_BASE}/api/employees/import`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ employees: importedEmployees })
-        });
-        if (res.ok) apiSuccess = true;
-      } catch (err) {}
-
-      if (!apiSuccess) {
-        let currentEmps = [];
-        try {
-          const saved = localStorage.getItem('mock_employees');
-          currentEmps = saved ? JSON.parse(saved) : (employees || []);
-        } catch (e) {
-          currentEmps = employees || [];
-        }
-        currentEmps = [...currentEmps, ...importedEmployees];
-        localStorage.setItem('mock_employees', JSON.stringify(currentEmps));
-      }
-
-      triggerAlert('success', `Se importaron ${importedEmployees.length} empleados correctamente.`);
+      const res = await fetch(`${API_BASE}/api/employees/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: importedEmployees })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error('Error en importación');
+      
+      triggerAlert('success', data.message);
       setCsvText('');
       setShowImport(false);
       refreshData();
@@ -217,44 +147,44 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
         <form onSubmit={handleSubmit} style={{ marginTop: '20px' }}>
           <div className="form-group">
             <label>Nombre Completo</label>
-            <input
-              type="text"
-              placeholder="Ej. Juan Pérez"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+            <input 
+              type="text" 
+              placeholder="Ej. Juan Pérez" 
+              value={name} 
+              onChange={(e) => setName(e.target.value)} 
             />
           </div>
           <div className="form-group">
             <label>Email Laboral</label>
-            <input
-              type="email"
-              placeholder="Ej. juan.perez@empresa.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+            <input 
+              type="email" 
+              placeholder="Ej. juan.perez@empresa.com" 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
             />
           </div>
           <div className="form-group">
             <label>CUIL / CUIT</label>
-            <input
-              type="text"
-              placeholder="Ej. 20-12345678-9"
-              value={cuil}
-              onChange={(e) => setCuil(e.target.value)}
+            <input 
+              type="text" 
+              placeholder="Ej. 20-12345678-9" 
+              value={cuil} 
+              onChange={(e) => setCuil(e.target.value)} 
             />
           </div>
           <div className="form-group">
             <label>Contraseña Portal (Opcional)</label>
-            <input
-              type="text"
-              placeholder="Dejar vacío para usar su CUIL limpio"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+            <input 
+              type="text" 
+              placeholder="Dejar vacío para usar su CUIL limpio" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
             />
           </div>
           <div className="form-group">
             <label>Rol de Usuario</label>
-            <select
-              value={role}
+            <select 
+              value={role} 
               onChange={(e) => setRole(e.target.value)}
             >
               <option value="empleado">Empleado</option>
@@ -263,31 +193,31 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
           </div>
           <div className="form-group">
             <label>Puesto / Cargo</label>
-            <input
-              type="text"
-              placeholder="Ej. Desarrollador Web"
-              value={puesto}
-              onChange={(e) => setPuesto(e.target.value)}
+            <input 
+              type="text" 
+              placeholder="Ej. Desarrollador Web" 
+              value={puesto} 
+              onChange={(e) => setPuesto(e.target.value)} 
             />
           </div>
           <div className="form-group">
             <label>Fecha de Ingreso</label>
-            <input
-              type="date"
-              value={fechaIngreso}
-              onChange={(e) => setFechaIngreso(e.target.value)}
+            <input 
+              type="date" 
+              value={fechaIngreso} 
+              onChange={(e) => setFechaIngreso(e.target.value)} 
             />
           </div>
-
+          
           <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
             <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
               <Plus size={16} />
               {editingId ? 'Actualizar' : 'Agregar'}
             </button>
             {editingId && (
-              <button
-                type="button"
-                className="btn btn-secondary"
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
                 onClick={() => {
                   setEditingId(null);
                   setName('');
@@ -306,7 +236,7 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
         </form>
 
         <hr style={{ border: '0', borderTop: '1px solid var(--border-color)', margin: '24px 0' }} />
-
+        
         <button className="btn btn-secondary" style={{ width: '100%' }} onClick={() => setShowImport(!showImport)}>
           <FileUp size={16} />
           Importar desde CSV / Excel
@@ -316,8 +246,8 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
           <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <label>Pegar filas de nómina (CSV):</label>
             <p style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Estructura: Nombre, Email, CUIL (una fila por empleado)</p>
-            <textarea
-              rows={5}
+            <textarea 
+              rows={5} 
               placeholder="Juan Perez,juan@ejemplo.com,20-12345678-9&#10;Maria Gomez,maria@ejemplo.com,27-98765432-1"
               value={csvText}
               onChange={(e) => setCsvText(e.target.value)}
@@ -343,9 +273,9 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3>Lista de Empleados ({employees.filter(emp => showArchived ? emp.archived : !emp.archived).length})</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input
-              type="checkbox"
-              id="show-archived"
+            <input 
+              type="checkbox" 
+              id="show-archived" 
               checked={showArchived}
               onChange={(e) => setShowArchived(e.target.checked)}
             />
@@ -380,7 +310,7 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
                     <td>{emp.puesto || <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No definido</span>}</td>
                     <td>{emp.fechaIngreso ? new Date(emp.fechaIngreso + 'T00:00:00').toLocaleDateString('es-AR') : <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No definida</span>}</td>
                     <td>
-                      <span
+                      <span 
                         style={{
                           fontSize: '11px',
                           padding: '4px 8px',
@@ -402,15 +332,15 @@ export default function EmployeesTab({ employees, refreshData, triggerAlert }) {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          className="btn btn-secondary"
+                        <button 
+                          className="btn btn-secondary" 
                           style={{ padding: '6px 10px' }}
                           onClick={() => handleEdit(emp)}
                         >
                           Editar
                         </button>
-                        <button
-                          className="btn btn-secondary"
+                        <button 
+                          className="btn btn-secondary" 
                           style={{ padding: '6px 10px', color: emp.archived ? 'var(--success)' : 'var(--warning)' }}
                           onClick={() => handleArchive(emp.id, emp.archived)}
                           title={emp.archived ? "Restaurar" : "Archivar"}

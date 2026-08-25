@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  FileText, Users, Settings, Upload, CheckCircle,
-  Clock, Mail, Download, Trash2, Send, Plus,
+import { 
+  FileText, Users, Settings, Upload, CheckCircle, 
+  Clock, Mail, Download, Trash2, Send, Plus, 
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
@@ -27,7 +27,7 @@ import ThemeToggle from './shared/ThemeToggle';
 import AccessHub from './shared/AccessHub';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 export default function App() {
   const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutos
@@ -38,14 +38,14 @@ export default function App() {
   });
   const [hrTab, setHrTab] = useState('dashboard');
   const [token, setToken] = useState(null);
-
+  
   const [employeeSession, setEmployeeSession] = useState(() => {
     const saved = localStorage.getItem('employeeSession');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Date.now() < parsed.expiresAt) return parsed.data;
-      } catch (e) { }
+      } catch (e) {}
     }
     return null;
   });
@@ -56,7 +56,7 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         if (Date.now() < parsed.expiresAt) return parsed.data;
-      } catch (e) { }
+      } catch (e) {}
     }
     return null;
   });
@@ -66,7 +66,7 @@ export default function App() {
   // Guardar vista actual
   useEffect(() => {
     localStorage.setItem('view', view);
-
+    
     // Redirecciones de seguridad si no hay sesión
     if (view === 'employee' && !employeeSession) setView('hub');
     if (view === 'hr' && !hrSession) setView('hub');
@@ -75,7 +75,7 @@ export default function App() {
   // Manejar persistencia de sesión e inactividad
   useEffect(() => {
     let lastUpdate = Date.now();
-
+    
     const updateStorage = () => {
       const now = Date.now();
       if (now - lastUpdate > 5000) { // Throttling: actualizar cada 5 segs máximo
@@ -111,10 +111,10 @@ export default function App() {
               setSessionFn(null);
               alert("Tu sesión ha expirado por inactividad de 30 minutos.");
             }
-          } catch (e) { }
+          } catch (e) {}
         }
       };
-
+      
       checkSession('employeeSession', employeeSession, setEmployeeSession);
       checkSession('hrSession', hrSession, setHrSession);
     }, 60000); // Revisar cada 1 minuto
@@ -206,7 +206,7 @@ export default function App() {
     const handleUrlToken = () => {
       const searchParams = new URLSearchParams(window.location.search);
       let t = searchParams.get('token');
-
+      
       if (!t && window.location.hash) {
         const hashQuery = window.location.hash.split('?')[1];
         if (hashQuery) {
@@ -214,7 +214,7 @@ export default function App() {
           t = hashParams.get('token');
         }
       }
-
+      
       if (t) {
         setToken(t);
         setView('direct-sign');
@@ -256,13 +256,13 @@ export default function App() {
       );
     case 'hr':
       return hrSession ? (
-        <HRDashboard
-          hrSession={hrSession}
-          activeTab={hrTab}
-          setActiveTab={setHrTab}
-          handleLogout={handleLogout}
-          theme={theme}
-          toggleTheme={toggleTheme}
+        <HRDashboard 
+          hrSession={hrSession} 
+          activeTab={hrTab} 
+          setActiveTab={setHrTab} 
+          handleLogout={handleLogout} 
+          theme={theme} 
+          toggleTheme={toggleTheme} 
           switchToEmployeeView={() => {
             if (hrSession.employee) {
               setEmployeeSession(hrSession.employee);
@@ -278,11 +278,11 @@ export default function App() {
       );
     case 'employee':
       return employeeSession ? (
-        <EmployeeDashboard
-          employee={employeeSession}
-          handleLogout={handleLogout}
-          theme={theme}
-          toggleTheme={toggleTheme}
+        <EmployeeDashboard 
+          employee={employeeSession} 
+          handleLogout={handleLogout} 
+          theme={theme} 
+          toggleTheme={toggleTheme} 
           switchToHrView={() => {
             if (employeeSession.role === 'rrhh') {
               setHrSession({ isLoggedIn: true, employee: employeeSession });
