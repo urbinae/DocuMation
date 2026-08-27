@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  FileText, Users, Settings, Upload, CheckCircle, 
-  Clock, Mail, Download, Trash2, Send, Plus, 
+import {
+  FileText, Users, Settings, Upload, CheckCircle,
+  Clock, Mail, Download, Trash2, Send, Plus,
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
@@ -50,7 +50,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
       } else if (entry.isDirectory) {
         const dirReader = entry.createReader();
         const filesAccumulated = [];
-        
+
         const readEntries = () => {
           dirReader.readEntries(async (entries) => {
             if (entries.length === 0) {
@@ -73,7 +73,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
 
   // Obtener meses únicos presentes
   const months = [...new Set(payslips.map(p => p.month))].sort().reverse();
-  
+
   // Establecer mes por defecto si está vacío
   useEffect(() => {
     if (!selectedMonth && months.length > 0) {
@@ -97,28 +97,28 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
   // Extraer año y mes del nombre del archivo en formato YYYY-MM
   const detectPeriodFromFilename = (filename) => {
     const fn = filename.toLowerCase();
-    
+
     // 1. Formato YYYY-MM (ej: 2026-04, 2026_04, 2026/04)
     const yyyyMmRegex = /\b(20\d{2})[-_/](0[1-9]|1[0-2])\b/;
     let match = fn.match(yyyyMmRegex);
     if (match) {
       return `${match[1]}-${match[2]}`;
     }
-    
+
     // 2. Formato MM-YYYY (ej: 04-2026, 04/2026, 04_2026)
     const mmYyyyRegex = /\b(0[1-9]|1[0-2])[-_/](20\d{2})\b/;
     match = fn.match(mmYyyyRegex);
     if (match) {
       return `${match[2]}-${match[1]}`;
     }
-    
+
     // 3. Formato textual: meses en texto + año (ej: "abril 2026", "abril de 2026", "2026 abril")
     const monthsEs = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
     const monthsMap = {
       'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04', 'mayo': '05', 'junio': '06',
       'julio': '07', 'agosto': '08', 'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
     };
-    
+
     for (const month of monthsEs) {
       if (fn.includes(month)) {
         const yearRegex = /\b20\d{2}\b/;
@@ -128,7 +128,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
         }
       }
     }
-    
+
     return null;
   };
 
@@ -145,10 +145,10 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al subir archivo');
-      return { 
-        success: true, 
-        filename: file.name, 
-        month: targetMonth || selectedMonth, 
+      return {
+        success: true,
+        filename: file.name,
+        month: targetMonth || selectedMonth,
         message: data.message,
         skipped: !!data.skipped,
         noTextLayer: !!data.noTextLayer
@@ -172,7 +172,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al procesar Excel');
-      
+
       const summary = {
         total: data.total,
         successCount: data.successCount,
@@ -182,7 +182,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
         errors: data.errors || [],
         warnings: []
       };
-      
+
       setUploadSummary(summary);
       setShowSummaryModal(true);
       refreshData();
@@ -206,7 +206,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
 
     // Buscar si algún archivo tiene formato de fecha en su nombre
     const hasAnyPeriod = files.some(f => !!detectPeriodFromFilename(f.name));
-    
+
     if (hasAnyPeriod) {
       setPendingUploadFiles(files);
       setShowAutoDetectModal(true);
@@ -286,7 +286,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
     setUploading(false);
     setPendingUploadFiles([]);
     refreshData();
-    
+
     // Guardar resumen y mostrar modal final
     setUploadSummary(summary);
     setShowSummaryModal(true);
@@ -295,10 +295,10 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
   const handleDrop = async (e) => {
     e.preventDefault();
     setIsDragOver(false);
-    
+
     const items = Array.from(e.dataTransfer.items || []);
     let files = [];
-    
+
     if (items.length > 0 && items[0].webkitGetAsEntry) {
       setUploading(true);
       for (const item of items) {
@@ -356,12 +356,13 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
     return payslips.filter(p => {
       // 1. Verificar Período
       const matchPeriod = selectedDeletePeriods.length === 0 ? false : selectedDeletePeriods.includes(p.month);
-      
+
       // 2. Verificar Empleado
       let matchEmployee = false;
       if (selectedDeleteEmployees.length > 0) {
-        if (p.employeeId) {
-          matchEmployee = selectedDeleteEmployees.includes(p.employeeId);
+        const empId = p.employeeId || p.employee_id || p.employees?.id;
+        if (empId) {
+          matchEmployee = selectedDeleteEmployees.includes(empId);
         } else {
           matchEmployee = selectedDeleteEmployees.includes('unassigned');
         }
@@ -397,12 +398,17 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
   const filteredPayslips = payslips.filter(p => {
     const matchMonth = p.month === selectedMonth;
     const matchStatus = filterStatus === 'Todos' || p.status === filterStatus;
-    
-    const searchLower = search.toLowerCase();
-    const matchSearch = 
-      p.employeeName.toLowerCase().includes(searchLower) ||
-      (p.employeeCuil && p.employeeCuil.includes(searchLower)) ||
-      (p.detectedCuil && p.detectedCuil.includes(searchLower));
+
+    const searchLower = (search || '').toLowerCase();
+    const empName = p.employeeName || p.employees?.name || '';
+    const empCuil = p.employeeCuil || p.employees?.cuil || '';
+    const detCuil = p.detectedCuil || p.detected_cuil || '';
+
+    const matchSearch =
+      !searchLower ||
+      empName.toLowerCase().includes(searchLower) ||
+      empCuil.toLowerCase().includes(searchLower) ||
+      detCuil.toLowerCase().includes(searchLower);
 
     return matchMonth && matchStatus && matchSearch;
   });
@@ -486,17 +492,17 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
       <div className="upload-container">
         <div className="glass-panel">
           <h3 style={{ marginBottom: '16px' }}>Cargar Recibos</h3>
-          
+
           <div className="form-group">
             <label>Período de Liquidación</label>
-            <input 
-              type="month" 
-              value={selectedMonth} 
-              onChange={(e) => setSelectedMonth(e.target.value)} 
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
             />
           </div>
 
-          <div 
+          <div
             className={`upload-zone ${isDragOver ? 'dragover' : ''}`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -517,9 +523,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
             </div>
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button 
-                type="button" 
-                className="btn btn-secondary btn-folder" 
+              <button
+                type="button"
+                className="btn btn-secondary btn-folder"
                 style={{ padding: '6px 12px', fontSize: '12px' }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -531,25 +537,25 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               </button>
             </div>
 
-            <input 
-              type="file" 
-              id="file-input" 
-              multiple 
-              accept=".pdf,.xlsx,.xls" 
-              style={{ display: 'none' }} 
-              onChange={handleFileSelect} 
+            <input
+              type="file"
+              id="file-input"
+              multiple
+              accept=".pdf,.xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={handleFileSelect}
             />
-            <input 
-              type="file" 
-              id="folder-input" 
-              webkitdirectory="" 
-              directory="" 
-              multiple 
-              style={{ display: 'none' }} 
-              onChange={handleFileSelect} 
+            <input
+              type="file"
+              id="folder-input"
+              webkitdirectory=""
+              directory=""
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleFileSelect}
             />
           </div>
-          
+
           <div style={{ marginTop: '16px', fontSize: '13px', color: 'var(--text-secondary)' }}>
             <p>💡 <b>Tip de automatización:</b> Sube los PDFs individuales (originales y duplicados). El sistema los asociará al empleado leyendo su CUIL interno y los clasificará como Original o Duplicado de forma automática.</p>
           </div>
@@ -559,15 +565,15 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '16px' }}>
             <h3 style={{ whiteSpace: 'nowrap' }}>Control de Firmas ({selectedMonth})</h3>
             <div style={{ display: 'flex', gap: '12px', width: '100%', justifyContent: 'flex-end' }}>
-              <input 
-                type="text" 
-                placeholder="Buscar empleado o CUIL..." 
-                value={search} 
+              <input
+                type="text"
+                placeholder="Buscar empleado o CUIL..."
+                value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 style={{ maxWidth: '220px', padding: '8px 12px' }}
               />
-              <select 
-                value={filterStatus} 
+              <select
+                value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
                 style={{ padding: '8px 12px' }}
               >
@@ -577,9 +583,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 <option value="Enviado">Enviado (Pendiente)</option>
                 <option value="Firmado">Firmado</option>
               </select>
-              
-              <button 
-                className="btn btn-primary" 
+
+              <button
+                className="btn btn-primary"
                 onClick={() => {
                   const unsentList = filteredPayslips.filter(p => p.status === 'Cargado' && p.employeeId && p.duplicadoPath);
                   if (unsentList.length === 0) {
@@ -594,9 +600,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 <Send size={15} style={{ marginRight: '4px' }} />
                 Enviar Lote
               </button>
-              
-              <a 
-                href={totalInPeriod > 0 ? `${API_BASE}/api/download-zip/${selectedMonth}` : '#'} 
+
+              <a
+                href={totalInPeriod > 0 ? `${API_BASE}/api/download-zip/${selectedMonth}` : '#'}
                 className={`btn btn-secondary ${signedInPeriod === 0 ? 'disabled' : ''}`}
                 style={{ pointerEvents: signedInPeriod === 0 ? 'none' : 'auto', opacity: signedInPeriod === 0 ? 0.5 : 1 }}
                 title="Descargar todos los Duplicados Firmados en un ZIP"
@@ -604,8 +610,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 <FileDown size={15} />
                 Descargar ZIP
               </a>
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary"
                 style={{ border: '1px solid rgba(239, 68, 68, 0.4)', color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}
                 onClick={() => {
                   setAdvancedDeleteConfirmInput('');
@@ -642,18 +648,18 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                     const hasOrg = !!ps.originalPath;
                     const hasDup = !!ps.duplicadoPath;
                     const isSigned = ps.status === 'Firmado';
-                    
+
                     return (
                       <tr key={ps.id}>
                         <td>
-                          <div style={{ fontWeight: '600' }}>{ps.employeeName}</div>
+                          <div style={{ fontWeight: '600' }}>{ps.employeeName || ps.employees?.name || 'Empleado sin asignar'}</div>
                           <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                            CUIL: {ps.employeeCuil || ps.detectedCuil || 'No detectado'}
+                            CUIL: {ps.employeeCuil || ps.employees?.cuil || ps.detectedCuil || ps.detected_cuil || 'No detectado'}
                           </div>
-                          
-                          {!ps.employeeId && (
+
+                          {!ps.employeeId && !ps.employee_id && (
                             <div style={{ marginTop: '6px' }}>
-                              <select 
+                              <select
                                 onChange={(e) => handleMatchManual(ps.id, e.target.value)}
                                 style={{ fontSize: '11px', padding: '4px', background: '#2d1e3e', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#fda4af' }}
                                 defaultValue=""
@@ -703,8 +709,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                           <div style={{ display: 'flex', gap: '8px' }}>
                             {hasDup && ps.status === 'Cargado' && (
                               <>
-                                <button 
-                                  className="btn btn-secondary" 
+                                <button
+                                  className="btn btn-secondary"
                                   style={{ padding: '6px 10px' }}
                                   onClick={() => sendInvitation(ps.id)}
                                   title="Enviar solicitud inmediatamente"
@@ -712,8 +718,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                                 >
                                   <Mail size={14} />
                                 </button>
-                                <button 
-                                  className="btn btn-secondary" 
+                                <button
+                                  className="btn btn-secondary"
                                   style={{ padding: '6px 10px' }}
                                   onClick={() => {
                                     setSelectedScheduleIds([ps.id]);
@@ -729,8 +735,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             )}
 
                             {ps.status === 'Programado' && (
-                              <button 
-                                className="btn btn-danger" 
+                              <button
+                                className="btn btn-danger"
                                 style={{ padding: '6px 10px' }}
                                 onClick={async () => {
                                   if (!window.confirm("¿Deseas cancelar el envío programado?")) return;
@@ -755,8 +761,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             )}
 
                             {hasDup && ps.status === 'Enviado' && (
-                              <button 
-                                className="btn btn-secondary" 
+                              <button
+                                className="btn btn-secondary"
                                 style={{ padding: '6px 10px' }}
                                 onClick={() => sendInvitation(ps.id)}
                                 title="Re-enviar recordatorio"
@@ -765,11 +771,11 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                                 <Mail size={14} />
                               </button>
                             )}
-                            
+
                             {isSigned && (
-                              <a 
+                              <a
                                 href={`${API_BASE}/api/download/signed/${ps.id}`}
-                                className="btn btn-primary" 
+                                className="btn btn-primary"
                                 style={{ padding: '6px 10px', background: 'var(--success)', boxShadow: 'none' }}
                                 title="Descargar Duplicado Firmado"
                               >
@@ -777,9 +783,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                                 Firmado
                               </a>
                             )}
-                            
-                            <button 
-                              className="btn btn-danger" 
+
+                            <button
+                              className="btn btn-danger"
                               style={{ padding: '6px 10px' }}
                               onClick={() => deletePayslip(ps.id)}
                               title="Eliminar registro"
@@ -797,7 +803,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
           </div>
         </div>
       </div>
-      
+
       {/* Modal de Programación de Envío */}
       {showScheduleModal && (
         <div style={{
@@ -819,26 +825,26 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               <h3 style={{ fontSize: '18px' }}>Programar Envío de Recibos</h3>
               <button className="nav-link" onClick={() => setShowScheduleModal(false)} style={{ padding: '4px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={18} /></button>
             </div>
-            
+
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: '1.5' }}>
               Selecciona la fecha y hora. El sistema procesará el envío de los correos automáticamente al cumplirse el plazo.
               {selectedScheduleIds.length > 1 && <span> (Afectará a <b>{selectedScheduleIds.length} recibos</b> seleccionados).</span>}
             </p>
-            
+
             <div className="form-group">
               <label>Fecha y Hora de Envío (Local)</label>
-              <input 
-                type="datetime-local" 
-                value={scheduledDateTime} 
-                onChange={(e) => setScheduledDateTime(e.target.value)} 
+              <input
+                type="datetime-local"
+                value={scheduledDateTime}
+                onChange={(e) => setScheduledDateTime(e.target.value)}
                 required
                 style={{ width: '100%', marginTop: '4px' }}
               />
             </div>
-            
+
             <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary"
                 style={{ flex: 1 }}
                 onClick={() => {
                   setShowScheduleModal(false);
@@ -851,8 +857,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               >
                 Enviar Ahora
               </button>
-              <button 
-                className="btn btn-primary" 
+              <button
+                className="btn btn-primary"
                 style={{ flex: 1 }}
                 disabled={!scheduledDateTime || isSubmittingSchedule}
                 onClick={async () => {
@@ -906,17 +912,17 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               <h3 style={{ fontSize: '18px' }}>¿Usar autodetección de períodos?</h3>
               <button className="nav-link" onClick={() => { setShowAutoDetectModal(false); setPendingUploadFiles([]); }} style={{ padding: '4px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={18} /></button>
             </div>
-            
+
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
               Hemos detectado que algunos de los archivos seleccionados contienen un período de liquidación en su nombre (ej. <b>"2026-04"</b>).
             </p>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '24px', lineHeight: '1.5' }}>
               ¿Deseas clasificar automáticamente cada recibo en el período detectado de su nombre de archivo, o prefieres asignarlos todos al período seleccionado manualmente (<b>{selectedMonth}</b>)?
             </p>
-            
+
             <div style={{ display: 'flex', gap: '12px' }}>
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary"
                 style={{ flex: 1 }}
                 onClick={() => {
                   setShowAutoDetectModal(false);
@@ -925,8 +931,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               >
                 No, usar manual ({selectedMonth})
               </button>
-              <button 
-                className="btn btn-primary" 
+              <button
+                className="btn btn-primary"
                 style={{ flex: 1 }}
                 onClick={() => {
                   setShowAutoDetectModal(false);
@@ -956,20 +962,20 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
           zIndex: 1000,
           padding: '20px'
         }}>
-          <div className="glass-panel" style={{ 
-            maxWidth: '450px', 
-            width: '100%', 
+          <div className="glass-panel" style={{
+            maxWidth: '450px',
+            width: '100%',
             maxHeight: '90vh',
             display: 'flex',
             flexDirection: 'column',
-            border: '1px solid var(--border-color)', 
-            padding: '28px' 
+            border: '1px solid var(--border-color)',
+            padding: '28px'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
               <h3 style={{ fontSize: '18px' }}>Informe de Subida Finalizado</h3>
               <button className="nav-link" onClick={() => setShowSummaryModal(false)} style={{ padding: '4px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={18} /></button>
             </div>
-            
+
             <div style={{ overflowY: 'auto', flex: 1, paddingRight: '4px', marginBottom: '20px' }}>
               <div style={{ textAlign: 'center', marginBottom: '20px' }}>
                 <div className="stat-icon success" style={{ margin: '0 auto 12px auto', width: '56px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1027,8 +1033,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               </div>
             </div>
 
-            <button 
-              className="btn btn-primary" 
+            <button
+              className="btn btn-primary"
               style={{ width: '100%', flexShrink: 0 }}
               onClick={() => setShowSummaryModal(false)}
             >
@@ -1060,15 +1066,15 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 <AlertTriangle size={20} style={{ color: 'var(--warning)' }} />
                 Recibos Existentes Detectados
               </h3>
-              <button 
-                className="nav-link" 
-                onClick={() => { setShowConflictModal(false); setPendingUploadFiles([]); }} 
+              <button
+                className="nav-link"
+                onClick={() => { setShowConflictModal(false); setPendingUploadFiles([]); }}
                 style={{ padding: '4px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
               >
                 <X size={18} />
               </button>
             </div>
-            
+
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.5' }}>
               Se detectaron recibos de sueldo previamente cargados para el/los período(s): <b>{conflictPeriods.join(', ')}</b>.
             </p>
@@ -1077,8 +1083,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button 
-                className="btn btn-primary" 
+              <button
+                className="btn btn-primary"
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                 onClick={() => {
                   setShowConflictModal(false);
@@ -1088,8 +1094,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 <RefreshCw size={14} />
                 Sobrescribir existentes
               </button>
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary"
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                 onClick={() => {
                   setShowConflictModal(false);
@@ -1099,8 +1105,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 <Eye size={14} />
                 Omitir existentes (mantener actuales)
               </button>
-              <button 
-                className="btn btn-secondary" 
+              <button
+                className="btn btn-secondary"
                 style={{ border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fda4af' }}
                 onClick={() => {
                   setShowConflictModal(false);
@@ -1148,23 +1154,23 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
             zIndex: 1100,
             padding: '20px'
           }}>
-            <div className="glass-panel" style={{ 
-              maxWidth: '800px', 
-              width: '100%', 
+            <div className="glass-panel" style={{
+              maxWidth: '800px',
+              width: '100%',
               maxHeight: '90vh',
               display: 'flex',
               flexDirection: 'column',
-              border: '1px solid rgba(239, 68, 68, 0.3)', 
-              padding: '28px' 
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              padding: '28px'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
                 <h3 style={{ fontSize: '20px', color: '#f87171', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <AlertTriangle size={24} />
                   Borrado Masivo Avanzado
                 </h3>
-                <button 
-                  className="nav-link" 
-                  onClick={() => setShowAdvancedDeleteModal(false)} 
+                <button
+                  className="nav-link"
+                  onClick={() => setShowAdvancedDeleteModal(false)}
                   style={{ padding: '4px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
                 >
                   <X size={18} />
@@ -1178,7 +1184,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
 
                 {/* Grid de 3 Columnas para Filtros */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-                  
+
                   {/* Columna Períodos */}
                   <div style={{ display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.15)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -1195,8 +1201,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                       ) : (
                         allUniquePeriods.map(m => (
                           <label key={m} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox" 
+                            <input
+                              type="checkbox"
                               checked={selectedDeletePeriods.includes(m)}
                               onChange={(e) => {
                                 if (e.target.checked) {
@@ -1225,8 +1231,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                     </div>
                     <div style={{ maxHeight: '160px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', color: '#fda4af', fontWeight: '500' }}>
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           checked={selectedDeleteEmployees.includes('unassigned')}
                           onChange={(e) => {
                             if (e.target.checked) {
@@ -1240,8 +1246,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                       </label>
                       {employees.map(e => (
                         <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
-                          <input 
-                            type="checkbox" 
+                          <input
+                            type="checkbox"
                             checked={selectedDeleteEmployees.includes(e.id)}
                             onChange={(e) => {
                               if (e.target.checked) {
@@ -1270,8 +1276,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                     <div style={{ maxHeight: '160px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
                       {allStatuses.map(s => (
                         <label key={s} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
-                          <input 
-                            type="checkbox" 
+                          <input
+                            type="checkbox"
                             checked={selectedDeleteStatuses.includes(s)}
                             onChange={(e) => {
                               if (e.target.checked) {
@@ -1310,14 +1316,14 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                     <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                       Para confirmar, escriba la palabra <b>ELIMINAR</b> en mayúsculas:
                     </label>
-                    <input 
-                      type="text" 
-                      value={advancedDeleteConfirmInput} 
-                      onChange={(e) => setAdvancedDeleteConfirmInput(e.target.value)} 
+                    <input
+                      type="text"
+                      value={advancedDeleteConfirmInput}
+                      onChange={(e) => setAdvancedDeleteConfirmInput(e.target.value)}
                       placeholder="Escriba ELIMINAR"
-                      style={{ 
-                        width: '100%', 
-                        marginTop: '8px', 
+                      style={{
+                        width: '100%',
+                        marginTop: '8px',
                         borderColor: advancedDeleteConfirmInput === 'ELIMINAR' ? 'var(--danger)' : 'var(--border-color)',
                         textAlign: 'center',
                         fontWeight: 'bold',
@@ -1329,15 +1335,15 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               </div>
 
               <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
-                <button 
-                  className="btn btn-secondary" 
+                <button
+                  className="btn btn-secondary"
                   style={{ flex: 1 }}
                   onClick={() => setShowAdvancedDeleteModal(false)}
                 >
                   Cancelar
                 </button>
-                <button 
-                  className="btn btn-danger" 
+                <button
+                  className="btn btn-danger"
                   style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                   disabled={matched.length === 0 || advancedDeleteConfirmInput !== 'ELIMINAR'}
                   onClick={async () => {
