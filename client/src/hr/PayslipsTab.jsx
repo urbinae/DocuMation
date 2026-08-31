@@ -678,6 +678,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <span style={{ fontSize: '12px' }}>
+                              <p>{ps.id}</p>
                               📄 Original: {hasOrg ? (
                                 <a href={`${API_BASE}/api/download/original/${ps.id}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }} title="Descargar Original">
                                   {ps.originalFilename ? ps.originalFilename.substring(0, 20) + '...' : 'Descargar'} <Download size={10} style={{ display: 'inline' }} />

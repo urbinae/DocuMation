@@ -428,10 +428,10 @@ async function handleSignByToken(req, res) {
 router.post('/sign/:token', handleSignByToken);
 
 /**
- * POST /api/payslips/:id/send-email
- * Envía la notificación por correo electrónico con enlace directo de firma
+ * Handler reutilizable de envío de email para un recibo por su ID.
+ * Centralizado para ser montado en múltiples rutas alias.
  */
-router.post('/:id/send-email', async (req, res) => {
+async function sendEmailHandler(req, res) {
   try {
     const { id } = req.params;
     const { data: payslip, error } = await supabase
@@ -465,6 +465,77 @@ router.post('/:id/send-email', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Error al enviar notificación por correo', details: err.message });
+  }
+}
+
+/**
+ * POST /api/payslips/:id/send-email   — ruta canónica del backend
+ * POST /api/payslips/send/:id         — alias para compatibilidad con PayslipsTab.jsx y DashboardTab.jsx
+ * FIX BUG-001: el frontend usaba /send/:id que retornaba 404.
+ */
+router.post('/:id/send-email', sendEmailHandler);
+router.post('/send/:id', sendEmailHandler);
+
+/**
+ * POST /api/payslips/send-bulk
+ * Envío masivo de notificaciones de firma a una lista de IDs de recibos.
+ * FIX BUG-001: endpoint faltante consumido desde DashboardTab.jsx y PayslipsTab.jsx.
+ *
+ * Body: { ids: string[] }
+ */
+router.post('/send-bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Debe proporcionar un arreglo de IDs de recibos en el campo "ids"' });
+    }
+
+    const results  = [];
+    const errors   = [];
+
+    for (const id of ids) {
+      try {
+        const { data: payslip, error } = await supabase
+          .from('payslips')
+          .select('*, employees(name, email)')
+          .eq('id', id)
+          .single();
+
+        if (error || !payslip) {
+          errors.push({ id, error: 'Recibo no encontrado' });
+          continue;
+        }
+
+        const employeeEmail = payslip.employees?.email;
+        const employeeName  = payslip.employees?.name || 'Empleado';
+
+        if (!employeeEmail) {
+          errors.push({ id, error: 'El empleado no tiene email registrado' });
+          continue;
+        }
+
+        const result = await emailService.sendPayslipSignatureNotification({
+          to: employeeEmail,
+          employeeName,
+          month: payslip.month,
+          token: payslip.token
+        });
+
+        results.push({ id, email: employeeEmail, ...result });
+      } catch (innerErr) {
+        errors.push({ id, error: innerErr.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Enviados: ${results.length}, Errores: ${errors.length}`,
+      sent: results,
+      errors
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error en envío masivo de notificaciones', details: err.message });
   }
 });
 
