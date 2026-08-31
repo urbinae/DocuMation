@@ -422,7 +422,11 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
   const pendingInPeriod = totalInPeriod - signedInPeriod;
 
   const handleBulkSend = async () => {
-    const unsentList = filteredPayslips.filter(p => p.status === 'Cargado' && p.employeeId && p.duplicadoPath);
+    const unsentList = filteredPayslips.filter(p =>
+      p.status === 'Cargado' &&
+      (p.employeeId || p.employee_id) &&
+      (p.duplicadoPath || p.duplicado_storage_path)
+    );
     if (unsentList.length === 0) {
       triggerAlert('warning', 'No hay recibos cargados (con empleado asignado y duplicado listo) para enviar masivamente.');
       return;
@@ -590,7 +594,11 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               <button
                 className="btn btn-primary"
                 onClick={() => {
-                  const unsentList = filteredPayslips.filter(p => p.status === 'Cargado' && p.employeeId && p.duplicadoPath);
+                  const unsentList = filteredPayslips.filter(p =>
+                    p.status === 'Cargado' &&
+                    (p.employeeId || p.employee_id) &&
+                    (p.duplicadoPath || p.duplicado_storage_path)
+                  );
                   if (unsentList.length === 0) {
                     triggerAlert('warning', 'No hay recibos cargados (con empleado asignado y duplicado listo) para enviar o programar.');
                     return;
@@ -648,8 +656,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 </thead>
                 <tbody>
                   {filteredPayslips.map((ps) => {
-                    const hasOrg = !!ps.originalPath;
-                    const hasDup = !!ps.duplicadoPath;
+                    const hasOrg = !!(ps.originalPath || ps.original_storage_path);
+                    const hasDup = !!(ps.duplicadoPath || ps.duplicado_storage_path);
+                    const hasEmployeeId = !!(ps.employeeId || ps.employee_id);
                     const isSigned = ps.status === 'Firmado';
 
                     return (
@@ -660,7 +669,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             CUIL: {ps.employeeCuil || ps.employees?.cuil || ps.detectedCuil || ps.detected_cuil || 'No detectado'}
                           </div>
 
-                          {!ps.employeeId && !ps.employee_id && (
+                          {!hasEmployeeId && (
                             <div style={{ marginTop: '6px' }}>
                               <select
                                 onChange={(e) => handleMatchManual(ps.id, e.target.value)}
@@ -678,7 +687,6 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <span style={{ fontSize: '12px' }}>
-                              <p>{ps.id}</p>
                               📄 Original: {hasOrg ? (
                                 <a href={`${API_BASE}/api/download/original/${ps.id}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }} title="Descargar Original">
                                   {ps.originalFilename ? ps.originalFilename.substring(0, 20) + '...' : 'Descargar'} <Download size={10} style={{ display: 'inline' }} />

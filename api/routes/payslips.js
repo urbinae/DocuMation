@@ -21,12 +21,24 @@ function getBaseUrl() {
 
 /**
  * Helper para enriquecer objetos de recibo con URLs completas (firma / previsualización)
+ * y mapear campos snake_case → camelCase para compatibilidad con el frontend React.
+ * Se preservan los nombres snake_case originales para no romper código existente.
  */
 function enrichPayslipWithUrls(payslip) {
   if (!payslip) return null;
   const baseUrl = getBaseUrl();
   return {
     ...payslip,
+    // ── Alias camelCase requeridos por PayslipsTab.jsx / EmployeeDashboard.jsx ──
+    employeeId:    payslip.employee_id             || null,
+    originalPath:  payslip.original_storage_path  || null,
+    duplicadoPath: payslip.duplicado_storage_path  || null,
+    signedPath:    payslip.signed_storage_path     || null,
+    detectedCuil:  payslip.detected_cuil           || null,
+    financialData: payslip.financial_data          || null,
+    signedAt:      payslip.signed_at               || null,
+    scheduledAt:   payslip.scheduled_at            || null,
+    // ── URL de firma basada en BASE_URL ──
     sign_url: payslip.token ? `${baseUrl}/api/sign/${payslip.token}` : null
   };
 }
@@ -539,8 +551,101 @@ router.post('/send-bulk', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/download/:type/:id   – Proxy de descarga de PDFs desde Supabase Storage
+// type: 'original' | 'duplicado' | 'signed'
+// ─────────────────────────────────────────────────────────────────────────────
+async function downloadHandler(req, res) {
+  try {
+    const { type, id } = req.params;
+
+    const { data: payslip, error } = await supabase
+      .from('payslips')
+      .select('original_storage_path, duplicado_storage_path, signed_storage_path, employee_id')
+      .eq('id', id)
+      .single();
+
+    if (error || !payslip) {
+      return res.status(404).json({ error: 'Recibo no encontrado' });
+    }
+
+    const pathMap = {
+      original:  payslip.original_storage_path,
+      duplicado: payslip.duplicado_storage_path,
+      signed:    payslip.signed_storage_path
+    };
+
+    const storagePath = pathMap[type];
+    if (!storagePath) {
+      return res.status(404).json({ error: `No existe archivo '${type}' para este recibo` });
+    }
+
+    const { data: blob, error: dlErr } = await supabase.storage
+      .from('payslips')
+      .download(storagePath);
+
+    if (dlErr || !blob) {
+      return res.status(404).json({ error: `Error al descargar desde Storage: ${dlErr?.message || 'Archivo no encontrado'}` });
+    }
+
+    const buffer = Buffer.from(await blob.arrayBuffer());
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${type}_${id}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al descargar PDF', details: err.message });
+  }
+}
+
+router.get('/download/:type/:id', downloadHandler);
+
+// Alias para la URL usada en PayslipsTab.jsx  (/api/download/original/:id)
+// Se monta también en api/index.js bajo /api/download/
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/payslips/match  – Asociación manual de recibo a empleado
+// Body: { payslipId: string, employeeId: string }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/match', async (req, res) => {
+  try {
+    const { payslipId, employeeId } = req.body;
+
+    if (!payslipId || !employeeId) {
+      return res.status(400).json({ error: 'Se requieren payslipId y employeeId' });
+    }
+
+    // Verificar que el empleado existe
+    const { data: employee, error: empErr } = await supabase
+      .from('employees')
+      .select('id, cuil')
+      .eq('id', employeeId)
+      .single();
+
+    if (empErr || !employee) {
+      return res.status(404).json({ error: 'Empleado no encontrado' });
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('payslips')
+      .update({ employee_id: employeeId, updated_at: new Date().toISOString() })
+      .eq('id', payslipId)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    res.json({
+      success: true,
+      message: 'Recibo asociado correctamente al empleado',
+      payslip: enrichPayslipWithUrls(updated)
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al asociar recibo', details: err.message });
+  }
+});
+
 module.exports = {
   payslipsRouter: router,
   handleSignByToken,
-  enrichPayslipWithUrls
+  enrichPayslipWithUrls,
+  downloadHandler
 };
