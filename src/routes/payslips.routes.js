@@ -13,6 +13,7 @@ import {
   sendBulkPayslips,
   matchPayslips,
   schedulePayslips,
+  viewPayslip,
 } from '../controllers/payslips.controller.js';
 
 const router = Router();
@@ -24,6 +25,13 @@ const upload = multer({
     fileSize: 20 * 1024 * 1024, // Límite de 20 MB por archivo
   },
 });
+
+/**
+ * @route GET /api/payslips/view/:id/:type?
+ * @desc Previsualización / Streaming de PDF por ID o Token
+ */
+router.get('/view/:id/:type?', viewPayslip);
+router.get('/view/:id', viewPayslip);
 
 /**
  * @route GET /api/payslips

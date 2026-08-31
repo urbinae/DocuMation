@@ -889,3 +889,79 @@ export const schedulePayslips = async (req, res) => {
     return res.status(500).json({ error: 'Internal Server Error', message: err.message });
   }
 };
+
+/**
+ * Previsualización / Streaming de PDF por ID o Token
+ * GET /api/payslips/view/:id/:type?
+ */
+export const viewPayslip = async (req, res) => {
+  try {
+    const { id, type } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Se requiere ID o token del recibo.' });
+    }
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    let query = supabaseAdmin.from('payslips').select('*');
+    if (isUuid) {
+      query = query.or(`id.eq.${id},token.eq.${id}`);
+    } else {
+      query = query.eq('token', id);
+    }
+
+    const { data: payslip, error } = await query.maybeSingle();
+
+    if (error || !payslip) {
+      return res.status(404).json({ error: 'Not Found', message: 'Recibo no encontrado.' });
+    }
+
+    const requestedType = (type || 'duplicado').toLowerCase();
+    const pathMap = {
+      original: payslip.original_storage_path || payslip.file_path,
+      duplicado: payslip.duplicado_storage_path || payslip.original_storage_path || payslip.file_path,
+      signed: payslip.signed_storage_path || payslip.duplicado_storage_path || payslip.original_storage_path || payslip.file_path,
+    };
+
+    const storagePath = pathMap[requestedType];
+
+    if (!storagePath) {
+      return res.status(404).json({ error: 'Not Found', message: `No existe archivo '${requestedType}' para este recibo.` });
+    }
+
+    if (req.query.signedUrl === 'true' || req.query.redirect === 'true') {
+      const { data: signedData } = await supabaseAdmin.storage
+        .from('payslips')
+        .createSignedUrl(storagePath, 3600);
+
+      if (signedData?.signedUrl) {
+        if (req.query.redirect === 'true') {
+          return res.redirect(signedData.signedUrl);
+        }
+        return res.json({ signedUrl: signedData.signedUrl });
+      }
+    }
+
+    const { data: blob, error: dlErr } = await supabaseAdmin.storage
+      .from('payslips')
+      .download(storagePath);
+
+    if (dlErr || !blob) {
+      const { data: fallbackSigned } = await supabaseAdmin.storage
+        .from('payslips')
+        .createSignedUrl(storagePath, 3600);
+
+      if (fallbackSigned?.signedUrl) {
+        return res.redirect(fallbackSigned.signedUrl);
+      }
+      return res.status(404).json({ error: 'Not Found', message: `Error al descargar desde Storage: ${dlErr?.message || 'Archivo no encontrado'}` });
+    }
+
+    const buffer = Buffer.from(await blob.arrayBuffer());
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${requestedType}_${payslip.id}.pdf"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error('Error en viewPayslip:', err);
+    return res.status(500).json({ error: 'Internal Server Error', message: err.message });
+  }
+};

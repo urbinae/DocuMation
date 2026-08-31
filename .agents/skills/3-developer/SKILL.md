@@ -32,3 +32,4 @@ Modifica la logica del frontend si es necesario para que se adapte a la logica d
 - NO dejar bloques `// TODO`, soluciones a medias o código dummy.
 - NO asumir nombres de columnas distintos (ej. usar `employee_id` en lugar de `id_empleado`, `cuil` en lugar de `tax_id`).
 - NO intentar realizar operaciones sobre tablas que no estén declaradas en el esquema oficial.
+- No ejecutar pruebas hasta que yo te lo indique, y si detectas que hay una prueba que no se puede ejecutar debido a que falta algun dato, pedime que te lo proporcione antes de continuar.

@@ -9,7 +9,7 @@ const { validate, payslipSchema, clientSchema, contractSchema } = require('./lib
 const employeesRouter = require('./routes/employees');
 const { authRouter, handleLogin, handleGoogleLogin, handlePushSubscription } = require('./routes/auth');
 const settingsRouter = require('./routes/settings');
-const { payslipsRouter, handleSignByToken, downloadHandler, getPayslipsByEmployeeHandler } = require('./routes/payslips');
+const { payslipsRouter, handleSignByToken, downloadHandler, getPayslipsByEmployeeHandler, viewPayslipHandler } = require('./routes/payslips');
 const aiRouter = require('./routes/ai');
 const emailService = require('./services/emailService');
 const aiService = require('./services/aiService');
@@ -64,9 +64,10 @@ app.use('/api/payslips', payslipsRouter);
 app.use('/api/ai', aiRouter);
 
 // -----------------------------------------------------------------------------
-// Proxy de descarga de PDFs desde Supabase Storage
-// El frontend usa: /api/download/original/:id  /api/download/duplicado/:id  /api/download/signed/:id
+// Visualizador / Proxy de PDFs desde Supabase Storage
 // -----------------------------------------------------------------------------
+app.get('/api/payslips/view/:id/:type?', viewPayslipHandler);
+app.get('/api/sign/view/:token/:type?', viewPayslipHandler);
 app.get('/api/download/:type/:id', downloadHandler);
 
 // Endpoint de Firma por Token (/api/sign/:token)
