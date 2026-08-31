@@ -28,11 +28,16 @@ if (isSmtpConfigured) {
 }
 
 /**
- * Obtener la dirección de remitente formateada
+ * Obtener la dirección de remitente formateada.
+ * Lee COMPANY_NAME desde process.env en tiempo de ejecución para permitir
+ * sobrescritura en tests y en configuraciones dinámicas sin recargar el módulo.
+ * Usa ?? (nullish coalescing) para respetar COMPANY_NAME='' como valor vacío intencional.
  */
 function getFromAddress() {
-  if (COMPANY_NAME) {
-    return `"${COMPANY_NAME}" <${SMTP_FROM}>`;
+  // ?? solo aplica fallback cuando el valor es null o undefined, no cuando es ''
+  const companyName = process.env.COMPANY_NAME ?? COMPANY_NAME;
+  if (companyName) {
+    return `"${companyName}" <${SMTP_FROM}>`;
   }
   return SMTP_FROM;
 }
@@ -62,7 +67,8 @@ async function sendEmail({ to, subject, html, text }) {
     return {
       success: true,
       simulated: true,
-      messageId: `simulated-${Date.now()}`
+      // Sufijo aleatorio garantiza unicidad incluso en llamadas dentro del mismo milisegundo
+      messageId: `simulated-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     };
   }
 

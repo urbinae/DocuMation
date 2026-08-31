@@ -9,7 +9,7 @@ const { validate, payslipSchema, clientSchema, contractSchema } = require('./lib
 const employeesRouter = require('./routes/employees');
 const { authRouter, handleLogin, handleGoogleLogin, handlePushSubscription } = require('./routes/auth');
 const settingsRouter = require('./routes/settings');
-const { payslipsRouter, handleSignByToken } = require('./routes/payslips');
+const { payslipsRouter, handleSignByToken, downloadHandler } = require('./routes/payslips');
 const aiRouter = require('./routes/ai');
 const emailService = require('./services/emailService');
 const aiService = require('./services/aiService');
@@ -61,6 +61,12 @@ app.use('/api/auth', authRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/payslips', payslipsRouter);
 app.use('/api/ai', aiRouter);
+
+// -----------------------------------------------------------------------------
+// Proxy de descarga de PDFs desde Supabase Storage
+// El frontend usa: /api/download/original/:id  /api/download/duplicado/:id  /api/download/signed/:id
+// -----------------------------------------------------------------------------
+app.get('/api/download/:type/:id', downloadHandler);
 
 // Endpoint de Firma por Token (/api/sign/:token)
 app.post('/api/sign/:token', handleSignByToken);
@@ -187,7 +193,8 @@ app.delete('/api/contracts/:id', async (req, res) => {
 });
 
 // Handler 404 para rutas de API no encontradas
-app.use('/api/*', (req, res) => {
+// IMPORTANTE: debe ser el ÚLTIMO middleware registrado
+app.use('/api/', (req, res, next) => {
   res.status(404).json({ error: `Ruta de API '${req.originalUrl}' no encontrada` });
 });
 
