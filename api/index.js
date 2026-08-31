@@ -9,7 +9,7 @@ const { validate, payslipSchema, clientSchema, contractSchema } = require('./lib
 const employeesRouter = require('./routes/employees');
 const { authRouter, handleLogin, handleGoogleLogin, handlePushSubscription } = require('./routes/auth');
 const settingsRouter = require('./routes/settings');
-const { payslipsRouter, handleSignByToken, downloadHandler } = require('./routes/payslips');
+const { payslipsRouter, handleSignByToken, downloadHandler, getPayslipsByEmployeeHandler } = require('./routes/payslips');
 const aiRouter = require('./routes/ai');
 const emailService = require('./services/emailService');
 const aiService = require('./services/aiService');
@@ -58,6 +58,7 @@ app.get('/api/email/status', (req, res) => {
 // -----------------------------------------------------------------------------
 app.use('/api/employees', employeesRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/employee', authRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/payslips', payslipsRouter);
 app.use('/api/ai', aiRouter);
@@ -92,6 +93,7 @@ app.get('/api/sign/token/:token', async (req, res) => {
 app.post('/api/employee/login', handleLogin);
 app.post('/api/employee/google-login', handleGoogleLogin);
 app.post('/api/employee/push-subscription', handlePushSubscription);
+app.get('/api/employee/payslips/:employeeId', getPayslipsByEmployeeHandler);
 
 
 // -----------------------------------------------------------------------------

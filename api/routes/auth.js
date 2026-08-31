@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { supabase } = require('../lib/supabase');
 const { validate, authLoginSchema, googleLoginSchema, pushSubscriptionSchema } = require('../lib/zodSchemas');
+const { getPayslipsByEmployeeHandler } = require('./payslips');
 
 // Helper para formatear empleado hacia el cliente React
 function formatEmployee(emp) {
@@ -231,6 +232,9 @@ const handlePushSubscription = async (req, res) => {
 };
 
 router.post('/push-subscription', validate(pushSubscriptionSchema), handlePushSubscription);
+
+// GET /api/auth/payslips/:employeeId o /api/employee/payslips/:employeeId
+router.get('/payslips/:employeeId', getPayslipsByEmployeeHandler);
 
 module.exports = {
   authRouter: router,

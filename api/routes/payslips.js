@@ -73,6 +73,44 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /api/payslips/employee/:employeeId
+ * Listado de recibos pertenecientes a un empleado específico por su ID
+ */
+async function getPayslipsByEmployeeHandler(req, res) {
+  try {
+    const { employeeId } = req.params;
+    const { data, error } = await supabase
+      .from('payslips')
+      .select(`
+        *,
+        employees (
+          id,
+          name,
+          email,
+          cuil,
+          puesto
+        )
+      `)
+      .eq('employee_id', employeeId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      if (error.code === '22P02') {
+        return res.json([]);
+      }
+      throw error;
+    }
+
+    const formattedData = (data || []).map(enrichPayslipWithUrls);
+    res.json(formattedData);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener recibos del empleado', details: err.message });
+  }
+}
+
+router.get('/employee/:employeeId', getPayslipsByEmployeeHandler);
+
+/**
  * POST /api/payslips/upload
  * Subida individual de PDF (Original o Duplicado)
  */
@@ -643,9 +681,114 @@ router.post('/match', async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/payslips/:id
+ * Elimina un recibo por su ID y remueve los archivos correspondientes en Storage
+ */
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: payslip } = await supabase
+      .from('payslips')
+      .select('original_storage_path, duplicado_storage_path, signed_storage_path')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (payslip) {
+      const filesToRemove = [
+        payslip.original_storage_path,
+        payslip.duplicado_storage_path,
+        payslip.signed_storage_path
+      ].filter(Boolean);
+
+      if (filesToRemove.length > 0) {
+        await supabase.storage.from('payslips').remove(filesToRemove);
+      }
+    }
+
+    const { error } = await supabase.from('payslips').delete().eq('id', id);
+    if (error) throw error;
+
+    res.json({ success: true, message: 'Recibo eliminado correctamente' });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al eliminar el recibo', details: err.message });
+  }
+});
+
+/**
+ * POST /api/payslips/delete-bulk
+ * Elimina un lote de recibos por sus IDs
+ */
+router.post('/delete-bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Debe proporcionar un arreglo de IDs en el campo "ids"' });
+    }
+
+    const { data: payslips } = await supabase
+      .from('payslips')
+      .select('original_storage_path, duplicado_storage_path, signed_storage_path')
+      .in('id', ids);
+
+    if (payslips && payslips.length > 0) {
+      const filesToRemove = [];
+      payslips.forEach(p => {
+        if (p.original_storage_path) filesToRemove.push(p.original_storage_path);
+        if (p.duplicado_storage_path) filesToRemove.push(p.duplicado_storage_path);
+        if (p.signed_storage_path) filesToRemove.push(p.signed_storage_path);
+      });
+      if (filesToRemove.length > 0) {
+        await supabase.storage.from('payslips').remove(filesToRemove);
+      }
+    }
+
+    const { error } = await supabase.from('payslips').delete().in('id', ids);
+    if (error) throw error;
+
+    res.json({ success: true, message: `Se eliminaron ${ids.length} recibos correctamente` });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al eliminar recibos en lote', details: err.message });
+  }
+});
+
+/**
+ * POST /api/payslips/schedule
+ * Programación o cancelación de envío de recibos
+ */
+router.post('/schedule', async (req, res) => {
+  try {
+    const { ids, scheduledAt } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Debe proporcionar un arreglo de IDs en el campo "ids"' });
+    }
+
+    const newStatus = scheduledAt ? 'Programado' : 'Cargado';
+    const { error } = await supabase
+      .from('payslips')
+      .update({
+        status: newStatus,
+        scheduled_at: scheduledAt || null,
+        updated_at: new Date().toISOString()
+      })
+      .in('id', ids);
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: scheduledAt ? `Envío programado para ${scheduledAt}` : 'Programación cancelada'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al programar recibos', details: err.message });
+  }
+});
+
 module.exports = {
   payslipsRouter: router,
   handleSignByToken,
   enrichPayslipWithUrls,
-  downloadHandler
+  downloadHandler,
+  getPayslipsByEmployeeHandler
 };
