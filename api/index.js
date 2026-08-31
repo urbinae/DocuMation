@@ -193,7 +193,8 @@ app.delete('/api/contracts/:id', async (req, res) => {
 });
 
 // Handler 404 para rutas de API no encontradas
-app.use('/api/*', (req, res) => {
+// IMPORTANTE: debe ser el ÚLTIMO middleware registrado
+app.use('/api/', (req, res, next) => {
   res.status(404).json({ error: `Ruta de API '${req.originalUrl}' no encontrada` });
 });
 
