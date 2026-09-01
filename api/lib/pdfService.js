@@ -80,11 +80,12 @@ async function analyzeBuffer(fileBuffer, originalFilename = '') {
 
   // 1. Detección de CUIL
   let detectedCuil = null;
-  const cuilRegex = /\b(20|23|24|27|30|32|33|34)[-.\s]?\d{8}[-.\s]?\d\b/g;
-  const matches = text.match(cuilRegex) || [];
+  const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
+  let match;
 
-  for (const match of matches) {
-    const cleanMatch = match.replace(/\D/g, '');
+  while ((match = cuilRegex.exec(text)) !== null) {
+    const rawMatch = match[1] || match[0];
+    const cleanMatch = rawMatch.replace(/\D/g, '');
     if (isValidCUIL(cleanMatch)) {
       detectedCuil = cleanMatch;
       break;
@@ -94,9 +95,10 @@ async function analyzeBuffer(fileBuffer, originalFilename = '') {
   // Fallback: Buscar cualquier secuencia de 11 dígitos en el texto o nombre de archivo
   if (!detectedCuil) {
     const fallbackMatches = (text + ' ' + originalFilename).match(/\b\d{11}\b/g) || [];
-    for (const match of fallbackMatches) {
-      if (isValidCUIL(match)) {
-        detectedCuil = match;
+    for (const raw of fallbackMatches) {
+      const cleanMatch = raw.replace(/\D/g, '');
+      if (isValidCUIL(cleanMatch)) {
+        detectedCuil = cleanMatch;
         break;
       }
     }
@@ -203,9 +205,26 @@ async function excelToPdfBuffer(worksheet) {
 
     let rowText = '';
     row.eachCell((cell) => {
-      const val = cell.value != null ? (cell.value.result || cell.value.text || String(cell.value)) : '';
-      if (val) {
-        rowText += val + '  ';
+      let val = '';
+      if (cell.value != null) {
+        if (cell.text != null && cell.text !== '') {
+          val = String(cell.text);
+        } else if (typeof cell.value === 'object') {
+          if (cell.value.result != null) {
+            val = String(cell.value.result);
+          } else if (Array.isArray(cell.value.richText)) {
+            val = cell.value.richText.map(rt => rt.text || '').join('');
+          } else if (cell.value.text != null) {
+            val = String(cell.value.text);
+          } else {
+            val = String(cell.value);
+          }
+        } else {
+          val = String(cell.value);
+        }
+      }
+      if (val.trim()) {
+        rowText += val.trim() + '  ';
       }
     });
 
