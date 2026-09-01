@@ -7,10 +7,23 @@ const pdfService = require('../lib/pdfService');
 const emailService = require('../services/emailService');
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }
+});
 
-// Middleware para capturar archivo sea en campo 'file', 'pdf' o 'excel'
-const fileUploadMiddleware = upload.single('file');
+// Middleware para capturar archivo en memoria sin importar la clave ('file', 'pdf', 'excel', etc.)
+const fileUploadMiddleware = (req, res, next) => {
+  upload.any()(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ error: `Error en subida de archivo: ${err.message}` });
+    }
+    if (req.files && req.files.length > 0) {
+      req.file = req.files[0];
+    }
+    next();
+  });
+};
 
 /**
  * Helper para obtener BASE_URL formateada sin barra final
@@ -116,8 +129,8 @@ router.get('/employee/:employeeId', getPayslipsByEmployeeHandler);
  */
 router.post('/upload', fileUploadMiddleware, async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Debe adjuntar un archivo PDF en la petición (campo "file")' });
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ error: 'Debe adjuntar un archivo PDF en la petición (campo "file" o "pdf")' });
     }
 
     const month = req.body.month || new Date().toISOString().substring(0, 7);
@@ -133,30 +146,51 @@ router.post('/upload', fileUploadMiddleware, async (req, res) => {
       .maybeSingle();
 
     if (existingHash) {
-      return res.status(400).json({ error: 'El archivo ya fue subido previamente (duplicado)' });
+      return res.status(400).json({
+        error: 'El archivo ya fue subido previamente (duplicado)',
+        skipped: true
+      });
     }
 
     // 2. Análisis del Buffer PDF y extracción de CUIL
     const analysis = await pdfService.analyzeBuffer(fileBuffer, originalFilename);
     if (!analysis.cuil) {
-      return res.status(400).json({ error: 'No se pudo detectar un CUIL válido en el documento' });
+      return res.status(400).json({
+        error: 'No se pudo detectar un CUIL válido en el documento PDF',
+        noTextLayer: true
+      });
     }
 
     // 3. Buscar empleado en la base de datos por CUIL
     const formatted = pdfService.formatCUIL(analysis.cuil);
-    const { data: employee, error: empErr } = await supabase
-      .from('employees')
-      .select('id, cuil, name, email')
-      .or(`cuil.eq.${analysis.cuil},cuil.eq.${formatted}`)
-      .maybeSingle();
+    const cleanCuil = String(analysis.cuil).replace(/\D/g, '');
 
-    if (empErr || !employee) {
+    const { data: allEmployees } = await supabase
+      .from('employees')
+      .select('id, cuil, name, email');
+
+    let employee = (allEmployees || []).find(emp => {
+      const empClean = String(emp.cuil || '').replace(/\D/g, '');
+      return empClean === cleanCuil || emp.cuil === analysis.cuil || emp.cuil === formatted;
+    });
+
+    if (!employee) {
+      const { data: empDirect } = await supabase
+        .from('employees')
+        .select('id, cuil, name, email')
+        .or(`cuil.eq.${analysis.cuil},cuil.eq.${formatted}`)
+        .maybeSingle();
+      employee = empDirect;
+    }
+
+    if (!employee) {
       return res.status(404).json({ error: `No se encontró un empleado registrado con el CUIL ${analysis.cuil}` });
     }
 
     // 4. Subida del Buffer a Supabase Storage (Bucket 'payslips')
     const storageFolder = analysis.type === 'duplicado' ? 'duplicados' : 'originals';
-    const storagePath = `${storageFolder}/${uuidv4()}_${originalFilename}`;
+    const cleanFilename = pdfService.sanitizeFileName(originalFilename);
+    const storagePath = `${storageFolder}/${uuidv4()}_${cleanFilename}`;
 
     const { error: uploadErr } = await supabase.storage
       .from('payslips')
@@ -181,8 +215,7 @@ router.post('/upload', fileUploadMiddleware, async (req, res) => {
 
     if (existingPayslip) {
       const updatePayload = {
-        status: 'Cargado',
-        updated_at: new Date().toISOString()
+        status: 'Cargado'
       };
 
       if (analysis.type === 'duplicado') {
@@ -233,7 +266,7 @@ router.post('/upload', fileUploadMiddleware, async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Recibo procesado y guardado correctamente',
-      payslip: resultPayslip,
+      payslip: enrichPayslipWithUrls(resultPayslip),
       analysis
     });
   } catch (err) {
@@ -247,8 +280,8 @@ router.post('/upload', fileUploadMiddleware, async (req, res) => {
  */
 router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Debe adjuntar un archivo Excel (.xlsx) en el campo "file"' });
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ error: 'Debe adjuntar un archivo Excel (.xlsx) en la petición (campo "file" o "excel")' });
     }
 
     const month = req.body.month || new Date().toISOString().substring(0, 7);
@@ -260,6 +293,10 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
     let skippedCount = 0;
     const errors = [];
     const excludedSheets = ['RESUMEN', 'SICOSS', 'MODELO', 'CUSS', 'HOJA6', 'HOJA 6', 'PARAMETROS'];
+
+    const { data: allEmployees } = await supabase
+      .from('employees')
+      .select('id, cuil, name');
 
     for (const worksheet of workbook.worksheets) {
       const sheetNameUpper = worksheet.name.toUpperCase().trim();
@@ -279,13 +316,23 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
         continue;
       }
 
-      // 3. Matcheo con Empleado en Base de Datos
+      // 3. Matcheo con Empleado en Base de Datos por CUIL limpio
       const formatted = pdfService.formatCUIL(analysis.cuil);
-      const { data: employee } = await supabase
-        .from('employees')
-        .select('id, cuil, name')
-        .or(`cuil.eq.${analysis.cuil},cuil.eq.${formatted}`)
-        .maybeSingle();
+      const cleanCuil = String(analysis.cuil).replace(/\D/g, '');
+
+      let employee = (allEmployees || []).find(emp => {
+        const empClean = String(emp.cuil || '').replace(/\D/g, '');
+        return empClean === cleanCuil || emp.cuil === analysis.cuil || emp.cuil === formatted;
+      });
+
+      if (!employee) {
+        const { data: empDirect } = await supabase
+          .from('employees')
+          .select('id, cuil, name')
+          .or(`cuil.eq.${analysis.cuil},cuil.eq.${formatted}`)
+          .maybeSingle();
+        employee = empDirect;
+      }
 
       if (!employee) {
         errors.push({ sheet: worksheet.name, cuil: analysis.cuil, error: `El CUIL ${analysis.cuil} no corresponde a ningún empleado` });
@@ -311,8 +358,9 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
       const dupHash = pdfService.getBufferHash(dupBuffer);
 
       // 6. Subida de Buffers a Supabase Storage
-      const origStoragePath = `originals/${uuidv4()}_${worksheet.name}_original.pdf`;
-      const dupStoragePath = `duplicados/${uuidv4()}_${worksheet.name}_duplicado.pdf`;
+      const cleanSheetName = pdfService.sanitizeFileName(worksheet.name);
+      const origStoragePath = `originals/${uuidv4()}_${cleanSheetName}_original.pdf`;
+      const dupStoragePath = `duplicados/${uuidv4()}_${cleanSheetName}_duplicado.pdf`;
 
       const [origUpload, dupUpload] = await Promise.all([
         supabase.storage.from('payslips').upload(origStoragePath, origBuffer, { contentType: 'application/pdf', upsert: true }),
@@ -333,8 +381,7 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
             duplicado_storage_path: dupStoragePath,
             original_hash: origHash,
             duplicado_hash: dupHash,
-            status: 'Cargado',
-            updated_at: new Date().toISOString()
+            status: 'Cargado'
           })
           .eq('id', existingPayslip.id);
       } else {
@@ -359,6 +406,12 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
 
     res.json({
       success: true,
+      message: 'Ingesta de Excel procesada correctamente',
+      total: totalSheets,
+      successCount: processedCount,
+      skippedCount,
+      failCount: errors.length,
+      errors,
       summary: {
         totalSheets,
         processedCount,
