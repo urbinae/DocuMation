@@ -372,20 +372,26 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
 });
 
 /**
- * Handler genérico para firma de recibo por Token
- * (Exportado para ser reutilizado en /api/sign/:token)
+ * Handler genérico para firma de recibo por Token o ID
+ * Acepta payloads con { signatureImage, signatureBase64, position, analytics }
  */
 async function handleSignByToken(req, res) {
   try {
-    const { token } = req.params;
-    const { signatureImage, position } = req.body;
+    const identifier = req.params.id || req.params.token;
+    const { signatureImage, signatureBase64, position, analytics } = req.body;
+    const finalSignature = signatureImage || signatureBase64;
 
-    if (!token) {
-      return res.status(400).json({ error: 'Token de firma requerido' });
+    if (!identifier) {
+      return res.status(400).json({ error: 'ID o token de firma requerido' });
     }
 
-    // 1. Obtener recibo y datos del empleado asociado
-    const { data: payslip, error: fetchErr } = await supabase
+    if (!finalSignature) {
+      return res.status(400).json({ error: 'La imagen de firma es requerida' });
+    }
+
+    // 1. Obtener recibo y datos del empleado asociado por ID o por Token
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+    let query = supabase
       .from('payslips')
       .select(`
         *,
@@ -395,12 +401,18 @@ async function handleSignByToken(req, res) {
           cuil,
           email
         )
-      `)
-      .eq('token', token)
-      .maybeSingle();
+      `);
+
+    if (isUuid) {
+      query = query.or(`id.eq.${identifier},token.eq.${identifier}`);
+    } else {
+      query = query.eq('token', identifier);
+    }
+
+    const { data: payslip, error: fetchErr } = await query.maybeSingle();
 
     if (fetchErr || !payslip) {
-      return res.status(404).json({ error: 'Token de firma inválido o recibo no encontrado' });
+      return res.status(404).json({ error: 'Recibo no encontrado con el ID o token provisto' });
     }
 
     if (payslip.status === 'Firmado') {
@@ -408,7 +420,7 @@ async function handleSignByToken(req, res) {
     }
 
     // 2. Descargar el PDF Duplicado desde Supabase Storage
-    const dupPath = payslip.duplicado_storage_path || payslip.original_storage_path;
+    const dupPath = payslip.duplicado_storage_path || payslip.original_storage_path || payslip.file_path;
     if (!dupPath) {
       return res.status(404).json({ error: 'No se encontró el archivo PDF para firmar en Storage' });
     }
@@ -425,13 +437,14 @@ async function handleSignByToken(req, res) {
 
     // 3. Aplicar Firma Electrónica y Estampa Auditoría con pdf-lib
     const clientIp = req.headers['x-forwarded-for'] || req.ip || req.socket.remoteAddress || '127.0.0.1';
-    const signedBuffer = await pdfService.signPdfBuffer(dupBuffer, signatureImage, {
-      name: payslip.employees?.name || 'Empleado',
+    const signedBuffer = await pdfService.signPdfBuffer(dupBuffer, finalSignature, {
+      name: payslip.employees?.name || payslip.employee_name || 'Empleado',
       cuil: payslip.employees?.cuil || payslip.detected_cuil,
       ip: String(clientIp).split(',')[0].trim(),
       timestamp: new Date().toISOString(),
-      token: payslip.token,
-      position
+      token: payslip.token || identifier,
+      position,
+      analytics
     });
 
     // 4. Subir el PDF Firmado a Supabase Storage (carpeta /signed)
@@ -455,8 +468,7 @@ async function handleSignByToken(req, res) {
         signed_storage_path: signedStoragePath,
         signed_at: new Date().toISOString(),
         ip_address: String(clientIp).split(',')[0].trim(),
-        user_agent: req.headers['user-agent'] || 'Desconocido',
-        updated_at: new Date().toISOString()
+        user_agent: req.headers['user-agent'] || 'Desconocido'
       })
       .eq('id', payslip.id)
       .select()
@@ -470,12 +482,15 @@ async function handleSignByToken(req, res) {
       payslip: enrichPayslipWithUrls(updatedPayslip)
     });
   } catch (err) {
+    console.error('Error en firma de recibo:', err);
     res.status(500).json({ error: 'Error al procesar firma de recibo', details: err.message });
   }
 }
 
-// Ruta POST /api/payslips/sign/:token
+// Rutas POST para firma de recibos por Token o ID
 router.post('/sign/:token', handleSignByToken);
+router.post('/sign-by-id/:id', handleSignByToken);
+router.post('/:id/sign', handleSignByToken);
 
 /**
  * Handler reutilizable de envío de email para un recibo por su ID.
@@ -680,10 +695,27 @@ router.get('/view/:id', viewPayslipHandler);
 // ─────────────────────────────────────────────────────────────────────────────
 async function downloadHandler(req, res) {
   try {
-    const { type, id } = req.params;
+    let { type, id } = req.params;
 
+    // Inversión o resolución flexible de parámetros (:id vs :type)
+    const isParam1Uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(type);
+    if (isParam1Uuid && id) {
+      const temp = type;
+      type = id;
+      id = temp;
+    } else if (isParam1Uuid && !id) {
+      id = type;
+      type = 'signed';
+    }
+
+    if (!id) {
+      return res.status(400).json({ error: 'Se requiere ID o token del recibo' });
+    }
+
+    const requestedType = (type || 'signed').toLowerCase();
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-    let query = supabase.from('payslips').select('id, original_storage_path, duplicado_storage_path, signed_storage_path, file_path, employee_id');
+
+    let query = supabase.from('payslips').select('*');
     if (isUuid) {
       query = query.or(`id.eq.${id},token.eq.${id}`);
     } else {
@@ -696,35 +728,67 @@ async function downloadHandler(req, res) {
       return res.status(404).json({ error: 'Recibo no encontrado' });
     }
 
-    const pathMap = {
-      original:  payslip.original_storage_path || payslip.file_path,
-      duplicado: payslip.duplicado_storage_path || payslip.original_storage_path || payslip.file_path,
-      signed:    payslip.signed_storage_path || payslip.duplicado_storage_path || payslip.original_storage_path || payslip.file_path
-    };
-
-    const storagePath = pathMap[type];
-    if (!storagePath) {
-      return res.status(404).json({ error: `No existe archivo '${type}' para este recibo` });
+    let storagePath = null;
+    if (requestedType === 'signed') {
+      storagePath = payslip.signed_storage_path;
+      if (!storagePath) {
+        return res.status(404).json({ error: 'El recibo no posee un archivo firmado aún' });
+      }
+    } else if (requestedType === 'original') {
+      storagePath = payslip.original_storage_path || payslip.file_path;
+    } else {
+      storagePath = payslip.duplicado_storage_path || payslip.original_storage_path || payslip.file_path;
     }
 
+    if (!storagePath) {
+      return res.status(404).json({ error: `No se encontró el archivo '${requestedType}' para este recibo` });
+    }
+
+    // Opción para obtener Signed URL directa si se especifica via query parameter
+    if (req.query.signedUrl === 'true' || req.query.redirect === 'true') {
+      const { data: signedData } = await supabase.storage
+        .from('payslips')
+        .createSignedUrl(storagePath, 3600);
+
+      if (signedData?.signedUrl) {
+        if (req.query.redirect === 'true') {
+          return res.redirect(signedData.signedUrl);
+        }
+        return res.json({ signedUrl: signedData.signedUrl });
+      }
+    }
+
+    // Descarga y streaming de buffer con Content-Type: application/pdf
     const { data: blob, error: dlErr } = await supabase.storage
       .from('payslips')
       .download(storagePath);
 
     if (dlErr || !blob) {
+      const { data: fallbackSigned } = await supabase.storage
+        .from('payslips')
+        .createSignedUrl(storagePath, 3600);
+
+      if (fallbackSigned?.signedUrl) {
+        return res.redirect(fallbackSigned.signedUrl);
+      }
       return res.status(404).json({ error: `Error al descargar desde Storage: ${dlErr?.message || 'Archivo no encontrado'}` });
     }
 
     const buffer = Buffer.from(await blob.arrayBuffer());
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${type}_${payslip.id}.pdf"`);
-    res.send(buffer);
+    res.setHeader('Content-Disposition', `inline; filename="${requestedType}_${payslip.id}.pdf"`);
+    return res.send(buffer);
   } catch (err) {
-    res.status(500).json({ error: 'Error al descargar PDF', details: err.message });
+    console.error('Error en downloadHandler:', err);
+    return res.status(500).json({ error: 'Error al descargar PDF', details: err.message });
   }
 }
 
 router.get('/download/:type/:id', downloadHandler);
+router.get('/download/file/:id/:type?', downloadHandler);
+router.get('/download/signed/:id', downloadHandler);
+router.get('/download/original/:id', downloadHandler);
+router.get('/download/duplicado/:id', downloadHandler);
 
 // Alias para la URL usada en PayslipsTab.jsx  (/api/download/original/:id)
 // Se monta también en api/index.js bajo /api/download/
@@ -858,8 +922,7 @@ router.post('/schedule', async (req, res) => {
       .from('payslips')
       .update({
         status: newStatus,
-        scheduled_at: scheduledAt || null,
-        updated_at: new Date().toISOString()
+        scheduled_at: scheduledAt || null
       })
       .in('id', ids);
 

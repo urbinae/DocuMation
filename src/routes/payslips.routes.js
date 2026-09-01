@@ -14,6 +14,7 @@ import {
   matchPayslips,
   schedulePayslips,
   viewPayslip,
+  downloadPayslip,
 } from '../controllers/payslips.controller.js';
 
 const router = Router();
@@ -32,6 +33,15 @@ const upload = multer({
  */
 router.get('/view/:id/:type?', viewPayslip);
 router.get('/view/:id', viewPayslip);
+
+/**
+ * @route GET /api/payslips/download/:type/:id
+ * @desc Descarga de PDF por ID o Token (original, duplicado, signed)
+ */
+router.get('/download/:type/:id', downloadPayslip);
+router.get('/download/signed/:id', downloadPayslip);
+router.get('/download/original/:id', downloadPayslip);
+router.get('/download/duplicado/:id', downloadPayslip);
 
 /**
  * @route GET /api/payslips
@@ -98,6 +108,8 @@ router.post('/', upload.single('file'), createPayslip);
  * @desc Registrar la firma electrónica
  */
 router.post('/:id/sign', upload.single('signature'), signPayslip);
+router.post('/sign-by-id/:id', upload.single('signature'), signPayslip);
+router.post('/sign/:token', upload.single('signature'), signPayslip);
 
 /**
  * @route DELETE /api/payslips/:id

@@ -25,6 +25,7 @@ Modifica la logica del frontend si es necesario para que se adapte a la logica d
    - Procesar PDFs/Excel en memoria (Buffers con `pdf-lib` y `exceljs`).
    - Antes de escribir lógica de negocio para recibos, inspecciona el archivo de arquitectura en `.agents/skills/3-developer/resources/backend_payslip_rules.md` para verificar la precisión de los métodos.
    - Crea o refactoriza los endpoints en `/api/routes/payslips.js` utilizando la lógica descrita sin alterar las firmas ni las respuestas JSON estándar.
+   - asegurate de reiniciar el servidor luego de cada cambio.
 
 ## Constraints
 - **PROHIBIDO reescribir o rehacer el Frontend desde cero.** Todo desarrollo debe basarse en el código fuente de la carpeta `/src`.

@@ -69,9 +69,14 @@ app.use('/api/ai', aiRouter);
 app.get('/api/payslips/view/:id/:type?', viewPayslipHandler);
 app.get('/api/sign/view/:token/:type?', viewPayslipHandler);
 app.get('/api/download/:type/:id', downloadHandler);
+app.get('/api/download/file/:id/:type?', downloadHandler);
+app.get('/api/download/signed/:id', downloadHandler);
+app.get('/api/download/original/:id', downloadHandler);
+app.get('/api/download/duplicado/:id', downloadHandler);
 
-// Endpoint de Firma por Token (/api/sign/:token)
+// Endpoint de Firma por Token o ID (/api/sign/:token y /api/sign-by-id/:id)
 app.post('/api/sign/:token', handleSignByToken);
+app.post('/api/sign-by-id/:id', handleSignByToken);
 app.get('/api/sign/token/:token', async (req, res) => {
   try {
     const { token } = req.params;
