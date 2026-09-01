@@ -82,26 +82,27 @@ async function analyzeBuffer(fileBuffer, originalFilename = '') {
   let detectedCuil = null;
   const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
   let match;
+  const validCuilsFound = [];
 
   while ((match = cuilRegex.exec(text)) !== null) {
     const rawMatch = match[1] || match[0];
     const cleanMatch = rawMatch.replace(/\D/g, '');
-    if (isValidCUIL(cleanMatch)) {
-      detectedCuil = cleanMatch;
-      break;
+    if (isValidCUIL(cleanMatch) && !validCuilsFound.includes(cleanMatch)) {
+      validCuilsFound.push(cleanMatch);
     }
   }
 
   // Fallback: Buscar cualquier secuencia de 11 dígitos en el texto o nombre de archivo
-  if (!detectedCuil) {
-    const fallbackMatches = (text + ' ' + originalFilename).match(/\b\d{11}\b/g) || [];
-    for (const raw of fallbackMatches) {
-      const cleanMatch = raw.replace(/\D/g, '');
-      if (isValidCUIL(cleanMatch)) {
-        detectedCuil = cleanMatch;
-        break;
-      }
+  const fallbackMatches = (text + ' ' + originalFilename).match(/\b\d{11}\b/g) || [];
+  for (const raw of fallbackMatches) {
+    const cleanMatch = raw.replace(/\D/g, '');
+    if (isValidCUIL(cleanMatch) && !validCuilsFound.includes(cleanMatch)) {
+      validCuilsFound.push(cleanMatch);
     }
+  }
+
+  if (validCuilsFound.length > 0) {
+    detectedCuil = validCuilsFound[0]; // Por defecto el primero
   }
 
   // 2. Determinación de Tipo (Original vs Duplicado)
