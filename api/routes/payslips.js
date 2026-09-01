@@ -309,66 +309,78 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
       // 1. Generación de PDF A4 en memoria a partir de la solapa de Excel
       const sheetPdfBuffer = await pdfService.excelToPdfBuffer(worksheet);
 
-      // 2. Análisis estricto de CUIL impreso
-      let analysis = await pdfService.analyzeBuffer(sheetPdfBuffer, worksheet.name);
-      if (!analysis.cuil) {
-        // Fallback directo sobre las celdas del worksheet de Excel
-        let worksheetText = '';
-        worksheet.eachRow((row) => {
-          row.eachCell((cell) => {
-            let val = '';
-            if (cell.value != null) {
-              if (cell.text != null && cell.text !== '') val = String(cell.text);
-              else if (typeof cell.value === 'object') {
-                if (cell.value.result != null) val = String(cell.value.result);
-                else if (Array.isArray(cell.value.richText)) val = cell.value.richText.map(rt => rt.text || '').join('');
-                else if (cell.value.text != null) val = String(cell.value.text);
-                else val = String(cell.value);
-              } else val = String(cell.value);
-            }
-            if (val.trim()) worksheetText += val.trim() + ' ';
-          });
-        });
-
-        const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
-        let match;
-        while ((match = cuilRegex.exec(worksheetText)) !== null) {
-          const cleanMatch = (match[1] || match[0]).replace(/\D/g, '');
-          if (pdfService.isValidCUIL(cleanMatch)) {
-            analysis.cuil = cleanMatch;
-            analysis.formattedCuil = pdfService.formatCUIL(cleanMatch);
-            break;
+      // 2. Extraer texto completo de las celdas de la solapa de Excel
+      let worksheetText = '';
+      worksheet.eachRow((row) => {
+        row.eachCell((cell) => {
+          let val = '';
+          if (cell.value != null) {
+            if (cell.text != null && cell.text !== '') val = String(cell.text);
+            else if (typeof cell.value === 'object') {
+              if (cell.value.result != null) val = String(cell.value.result);
+              else if (Array.isArray(cell.value.richText)) val = cell.value.richText.map(rt => rt.text || '').join('');
+              else if (cell.value.text != null) val = String(cell.value.text);
+              else val = String(cell.value);
+            } else val = String(cell.value);
           }
+          if (val.trim()) worksheetText += val.trim() + ' ';
+        });
+      });
+
+      let analysis = await pdfService.analyzeBuffer(sheetPdfBuffer, worksheet.name);
+
+      // Recopilar todos los CUILs únicos encontrados (del PDF y del texto de Excel)
+      const foundCuils = [];
+      const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
+
+      const fullTextToScan = `${analysis.text || ''} ${worksheetText}`;
+      let match;
+      while ((match = cuilRegex.exec(fullTextToScan)) !== null) {
+        const cleanMatch = (match[1] || match[0]).replace(/\D/g, '');
+        if (pdfService.isValidCUIL(cleanMatch) && !foundCuils.includes(cleanMatch)) {
+          foundCuils.push(cleanMatch);
         }
       }
 
-      if (!analysis.cuil) {
-        errors.push({ sheet:worksheet.name, error: 'No se detectó un CUIL válido impreso en la hoja' });
+      // 3. Matcheo con Empleado en Base de Datos
+      let employee = null;
+      let matchedCuil = null;
+
+      // a) Primero buscar si alguno de los CUILs encontrados pertenece a un empleado
+      for (const cuilCandidate of foundCuils) {
+        const candidateFormatted = pdfService.formatCUIL(cuilCandidate);
+        const emp = (allEmployees || []).find(e => {
+          const empClean = String(e.cuil || '').replace(/\D/g, '');
+          return empClean === cuilCandidate || e.cuil === cuilCandidate || e.cuil === candidateFormatted;
+        });
+
+        if (emp) {
+          employee = emp;
+          matchedCuil = cuilCandidate;
+          break;
+        }
+      }
+
+      // b) Si no matcheó por CUIL (ej. los CUILs escaneados eran de la empresa o no estaban en BD), intentar por Nombre (Worksheet name)
+      if (!employee) {
+        const sheetClean = worksheet.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        employee = (allEmployees || []).find(e => {
+          const empNameClean = (e.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          return sheetClean.includes(empNameClean) || empNameClean.includes(sheetClean);
+        });
+        if (employee) {
+          matchedCuil = String(employee.cuil || '').replace(/\D/g, '');
+        }
+      }
+
+      if (!employee) {
+        const reportedCuil = foundCuils.length > 0 ? foundCuils.join(', ') : 'no detectado';
+        errors.push({ sheet: worksheet.name, cuil: reportedCuil, error: `No se encontró un empleado registrado para la hoja '${worksheet.name}' (CUILs en hoja: ${reportedCuil})` });
         continue;
       }
 
-      // 3. Matcheo con Empleado en Base de Datos por CUIL limpio
-      const formatted = pdfService.formatCUIL(analysis.cuil);
-      const cleanCuil = String(analysis.cuil).replace(/\D/g, '');
-
-      let employee = (allEmployees || []).find(emp => {
-        const empClean = String(emp.cuil || '').replace(/\D/g, '');
-        return empClean === cleanCuil || emp.cuil === analysis.cuil || emp.cuil === formatted;
-      });
-
-      if (!employee) {
-        const { data: empDirect } = await supabase
-          .from('employees')
-          .select('id, cuil, name')
-          .or(`cuil.eq.${analysis.cuil},cuil.eq.${formatted}`)
-          .maybeSingle();
-        employee = empDirect;
-      }
-
-      if (!employee) {
-        errors.push({ sheet: worksheet.name, cuil: analysis.cuil, error: `El CUIL ${analysis.cuil} no corresponde a ningún empleado` });
-        continue;
-      }
+      analysis.cuil = matchedCuil || String(employee.cuil || '').replace(/\D/g, '');
+      analysis.formattedCuil = pdfService.formatCUIL(analysis.cuil);
 
       // 4. Verificación de existencia de recibo completo para el mes
       const { data: existingPayslip } = await supabase
