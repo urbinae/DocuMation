@@ -310,9 +310,40 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
       const sheetPdfBuffer = await pdfService.excelToPdfBuffer(worksheet);
 
       // 2. Análisis estricto de CUIL impreso
-      const analysis = await pdfService.analyzeBuffer(sheetPdfBuffer, worksheet.name);
+      let analysis = await pdfService.analyzeBuffer(sheetPdfBuffer, worksheet.name);
       if (!analysis.cuil) {
-        errors.push({ sheet: worksheet.name, error: 'No se detectó un CUIL válido impreso en la hoja' });
+        // Fallback directo sobre las celdas del worksheet de Excel
+        let worksheetText = '';
+        worksheet.eachRow((row) => {
+          row.eachCell((cell) => {
+            let val = '';
+            if (cell.value != null) {
+              if (cell.text != null && cell.text !== '') val = String(cell.text);
+              else if (typeof cell.value === 'object') {
+                if (cell.value.result != null) val = String(cell.value.result);
+                else if (Array.isArray(cell.value.richText)) val = cell.value.richText.map(rt => rt.text || '').join('');
+                else if (cell.value.text != null) val = String(cell.value.text);
+                else val = String(cell.value);
+              } else val = String(cell.value);
+            }
+            if (val.trim()) worksheetText += val.trim() + ' ';
+          });
+        });
+
+        const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
+        let match;
+        while ((match = cuilRegex.exec(worksheetText)) !== null) {
+          const cleanMatch = (match[1] || match[0]).replace(/\D/g, '');
+          if (pdfService.isValidCUIL(cleanMatch)) {
+            analysis.cuil = cleanMatch;
+            analysis.formattedCuil = pdfService.formatCUIL(cleanMatch);
+            break;
+          }
+        }
+      }
+
+      if (!analysis.cuil) {
+        errors.push({ sheet:worksheet.name, error: 'No se detectó un CUIL válido impreso en la hoja' });
         continue;
       }
 
