@@ -9,7 +9,7 @@ const { validate, payslipSchema, clientSchema, contractSchema } = require('./lib
 const employeesRouter = require('./routes/employees');
 const { authRouter, handleLogin, handleGoogleLogin, handlePushSubscription } = require('./routes/auth');
 const settingsRouter = require('./routes/settings');
-const { payslipsRouter, handleSignByToken, downloadHandler } = require('./routes/payslips');
+const { payslipsRouter, handleSignByToken, downloadHandler, getPayslipsByEmployeeHandler, viewPayslipHandler } = require('./routes/payslips');
 const aiRouter = require('./routes/ai');
 const emailService = require('./services/emailService');
 const aiService = require('./services/aiService');
@@ -58,18 +58,25 @@ app.get('/api/email/status', (req, res) => {
 // -----------------------------------------------------------------------------
 app.use('/api/employees', employeesRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/employee', authRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/payslips', payslipsRouter);
 app.use('/api/ai', aiRouter);
 
 // -----------------------------------------------------------------------------
-// Proxy de descarga de PDFs desde Supabase Storage
-// El frontend usa: /api/download/original/:id  /api/download/duplicado/:id  /api/download/signed/:id
+// Visualizador / Proxy de PDFs desde Supabase Storage
 // -----------------------------------------------------------------------------
+app.get('/api/payslips/view/:id/:type?', viewPayslipHandler);
+app.get('/api/sign/view/:token/:type?', viewPayslipHandler);
 app.get('/api/download/:type/:id', downloadHandler);
+app.get('/api/download/file/:id/:type?', downloadHandler);
+app.get('/api/download/signed/:id', downloadHandler);
+app.get('/api/download/original/:id', downloadHandler);
+app.get('/api/download/duplicado/:id', downloadHandler);
 
-// Endpoint de Firma por Token (/api/sign/:token)
+// Endpoint de Firma por Token o ID (/api/sign/:token y /api/sign-by-id/:id)
 app.post('/api/sign/:token', handleSignByToken);
+app.post('/api/sign-by-id/:id', handleSignByToken);
 app.get('/api/sign/token/:token', async (req, res) => {
   try {
     const { token } = req.params;
@@ -92,6 +99,7 @@ app.get('/api/sign/token/:token', async (req, res) => {
 app.post('/api/employee/login', handleLogin);
 app.post('/api/employee/google-login', handleGoogleLogin);
 app.post('/api/employee/push-subscription', handlePushSubscription);
+app.get('/api/employee/payslips/:employeeId', getPayslipsByEmployeeHandler);
 
 
 // -----------------------------------------------------------------------------

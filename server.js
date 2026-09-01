@@ -29,6 +29,8 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+import { signPayslip, downloadPayslip } from './src/controllers/payslips.controller.js';
+
 // Registro de Rutas API
 app.use('/api/auth', authRoutes);
 app.use('/api/employee', authRoutes);
@@ -37,6 +39,15 @@ app.use('/api/payslips', payslipsRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
 app.use('/api/push_subscriptions', subscriptionsRoutes);
 app.use('/api/settings', settingsRoutes);
+
+app.post('/api/sign-by-id/:id', signPayslip);
+app.post('/api/sign/:token', signPayslip);
+
+app.get('/api/download/:type/:id', downloadPayslip);
+app.get('/api/download/file/:id/:type?', downloadPayslip);
+app.get('/api/download/signed/:id', downloadPayslip);
+app.get('/api/download/original/:id', downloadPayslip);
+app.get('/api/download/duplicado/:id', downloadPayslip);
 
 // Manejador de rutas no encontradas (404)
 app.use((req, res) => {

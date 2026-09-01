@@ -1025,7 +1025,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                     <h5 style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--danger)', marginBottom: '8px', letterSpacing: '0.05em' }}>Errores ({uploadSummary.failCount}):</h5>
                     <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', color: '#fda4af' }}>
                       {uploadSummary.errors.map((err, idx) => (
-                        <div key={idx} style={{ wordBreak: 'break-all' }}>• {err}</div>
+                        <div key={idx} style={{ wordBreak: 'break-all' }}>
+                          • {typeof err === 'object' && err !== null ? (err.sheet ? `[Hoja: ${err.sheet}] ` : '') + (err.error || JSON.stringify(err)) : String(err)}
+                        </div>
                       ))}
                     </div>
                   </>
@@ -1037,7 +1039,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                     <h5 style={{ fontSize: '12px', textTransform: 'uppercase', color: 'var(--warning)', marginBottom: '8px', letterSpacing: '0.05em' }}>Advertencias ({uploadSummary.warnings.length}):</h5>
                     <div style={{ maxHeight: '120px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', color: '#fde047' }}>
                       {uploadSummary.warnings.map((warn, idx) => (
-                        <div key={idx} style={{ wordBreak: 'break-all' }}>⚠️ {warn}</div>
+                        <div key={idx} style={{ wordBreak: 'break-all' }}>
+                          ⚠️ {typeof warn === 'object' && warn !== null ? (warn.sheet ? `[Hoja: ${warn.sheet}] ` : '') + (warn.warning || warn.error || JSON.stringify(warn)) : String(warn)}
+                        </div>
                       ))}
                     </div>
                   </>

@@ -92,8 +92,18 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Token no válido');
         
-        setPayslip(data);
-        if (data.status === 'Firmado') {
+        const psData = data.payslip || data;
+        setPayslip({
+          id: psData.id,
+          token: psData.token || token,
+          month: psData.month || psData.periodo,
+          status: psData.status,
+          employeeName: psData.employeeName || psData.employees?.name || 'Empleado',
+          employeeCuil: psData.employeeCuil || psData.employees?.cuil || psData.detectedCuil || psData.detected_cuil || '',
+          hasOriginal: !!(psData.originalPath || psData.original_storage_path),
+          hasDuplicado: !!(psData.duplicadoPath || psData.duplicado_storage_path)
+        });
+        if (psData.status === 'Firmado') {
           setIsSignedSuccess(true);
         }
       } catch (err) {
@@ -109,12 +119,13 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
       // Si entramos por panel de empleado ya tenemos la info del recibo
       setPayslip({
         id: payslipToSign.id,
-        month: payslipToSign.month,
+        token: payslipToSign.token,
+        month: payslipToSign.month || payslipToSign.periodo,
         status: payslipToSign.status,
-        employeeName: payslipToSign.employeeName,
-        employeeCuil: payslipToSign.employeeCuil,
-        hasOriginal: !!payslipToSign.originalPath,
-        hasDuplicado: !!payslipToSign.duplicadoPath
+        employeeName: payslipToSign.employeeName || payslipToSign.employees?.name || 'Empleado',
+        employeeCuil: payslipToSign.employeeCuil || payslipToSign.employees?.cuil || payslipToSign.detectedCuil || payslipToSign.detected_cuil || '',
+        hasOriginal: !!(payslipToSign.originalPath || payslipToSign.original_storage_path),
+        hasDuplicado: !!(payslipToSign.duplicadoPath || payslipToSign.duplicado_storage_path)
       });
       setLoading(false);
     }
@@ -278,9 +289,10 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
   };
 
   // URL para el PDF stream
-  const pdfStreamUrl = isDirectSign 
-    ? `${API_BASE}/api/sign/view/${token}/${activePdfTab}#toolbar=0` 
-    : `${API_BASE}/api/payslips/view/${payslip?.id}/${activePdfTab}#toolbar=0`;
+  const targetId = isDirectSign ? (token || payslip?.id || payslip?.token) : (payslip?.id || payslip?.token || token);
+  const pdfStreamUrl = targetId 
+    ? `${API_BASE}/api/payslips/view/${targetId}/${activePdfTab}` 
+    : '';
 
   if (loading) {
     return (

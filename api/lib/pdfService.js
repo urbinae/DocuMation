@@ -42,6 +42,19 @@ function formatCUIL(cuil) {
 }
 
 /**
+ * Sanitiza un nombre de archivo/ruta para Supabase Storage (remueve diacríticos/acentos y caracteres especiales)
+ * @param {string} filename 
+ * @returns {string}
+ */
+function sanitizeFileName(filename) {
+  if (!filename) return 'archivo';
+  return String(filename)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+/**
  * Calcula el hash SHA-256 de un Buffer
  * @param {Buffer} buffer 
  * @returns {string} Hash SHA-256 en formato hex
@@ -383,6 +396,7 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
 module.exports = {
   isValidCUIL,
   formatCUIL,
+  sanitizeFileName,
   getBufferHash,
   analyzeBuffer,
   extractFinancialData,

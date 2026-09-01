@@ -381,8 +381,17 @@ describe('Integration Tests – POST /api/payslips/:id/send-email', () => {
       const builder = {
         select() { return builder; },
         eq(col, val) { filters.push({ col, val }); return builder; },
+        order() { return builder; },
         single() { isSingle = true; return builder.execute(); },
         maybeSingle() { isSingle = true; return builder.execute(); },
+        async then(resolve, reject) {
+          try {
+            const res = await builder.execute();
+            resolve(res);
+          } catch (err) {
+            reject(err);
+          }
+        },
         async execute() {
           if (table === 'employees') {
             let list = [...mockEmployees];
@@ -585,5 +594,32 @@ describe('Integration Tests – POST /api/payslips/:id/send-email', () => {
     console.log('   Alias activos: POST /api/payslips/:id/send-email  (canónico)');
     console.log('                  POST /api/payslips/send/:id         (frontend alias)');
     console.log('                  POST /api/payslips/send-bulk        (envío masivo)\n');
+  });
+
+  test('GET /api/employee/payslips/:employeeId y GET /api/payslips/employee/:employeeId retornan 200 con la lista de recibos', async () => {
+    mockEmployees = [{ id: '5051338b-6ed7-48bb-ba57-317699446e87', name: 'Empleado Test', email: 'emp@test.com', cuil: '20-11111111-1' }];
+    mockPayslips  = [{
+      id:          'payslip-emp-001',
+      employee_id: '5051338b-6ed7-48bb-ba57-317699446e87',
+      month:       '2026-08',
+      token:       'tok-emp-001',
+      status:      'Cargado',
+      original_storage_path: 'originals/recibo.pdf',
+      duplicado_storage_path: 'duplicados/recibo.pdf',
+      employees:   { id: '5051338b-6ed7-48bb-ba57-317699446e87', name: 'Empleado Test', email: 'emp@test.com', cuil: '20-11111111-1', puesto: 'Dev' }
+    }];
+
+    // 1. Probar la ruta que usa el Portal de Empleado (/api/employee/payslips/:id)
+    const res1 = await jsonRequest('GET', '/api/employee/payslips/5051338b-6ed7-48bb-ba57-317699446e87');
+    assert.equal(res1.status, 200, `GET /api/employee/payslips/:id debe retornar 200. Recibido: ${res1.status}`);
+    assert.ok(Array.isArray(res1.body), 'La respuesta debe ser un arreglo');
+    assert.equal(res1.body.length, 1, 'Debe incluir 1 recibo');
+    assert.equal(res1.body[0].employeeId, '5051338b-6ed7-48bb-ba57-317699446e87');
+
+    // 2. Probar la ruta canónica (/api/payslips/employee/:id)
+    const res2 = await jsonRequest('GET', '/api/payslips/employee/5051338b-6ed7-48bb-ba57-317699446e87');
+    assert.equal(res2.status, 200, `GET /api/payslips/employee/:id debe retornar 200. Recibido: ${res2.status}`);
+    assert.ok(Array.isArray(res2.body), 'La respuesta debe ser un arreglo');
+    assert.equal(res2.body.length, 1, 'Debe incluir 1 recibo');
   });
 });
