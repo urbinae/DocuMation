@@ -3,6 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 import * as XLSX from 'xlsx';
 import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase.js';
+import pdfService from '../../api/lib/pdfService.js';
 
 /**
  * Helper para asegurar que un bucket de Supabase Storage existe
@@ -397,6 +398,8 @@ export const uploadPdfPayslip = async (req, res) => {
       // Actualizar registro existente
       const updateData = {
         file_path: origPath,
+        original_storage_path: origPath,
+        duplicado_storage_path: dupPath,
         file_url: '',
         status: 'pendiente',
       };
@@ -408,6 +411,8 @@ export const uploadPdfPayslip = async (req, res) => {
         employee_id: employeeId,
         periodo: targetPeriodo,
         file_path: origPath,
+        original_storage_path: origPath,
+        duplicado_storage_path: dupPath,
         file_url: '',
         status: 'pendiente',
       };
@@ -669,19 +674,62 @@ export const uploadExcelPayslips = async (req, res) => {
 export const signPayslip = async (req, res) => {
   try {
     const identifier = req.params.id || req.params.token;
-    const file = req.file;
-    const { signature_base64, signatureImage, signatureBase64, position, analytics } = req.body;
-    const finalSignature = signatureImage || signatureBase64 || signature_base64;
+    const { signature_base64, signatureImage, signatureBase64, position } = req.body;
 
-    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '127.0.0.1';
-    const ip_address = Array.isArray(rawIp) ? rawIp[0] : String(rawIp).split(',')[0].trim();
-    const user_agent = req.headers['user-agent'] || 'Desconocido';
+    const finalSignature =
+      signatureImage ||
+      signatureBase64 ||
+      signature_base64;
+
+    const rawIp =
+      req.headers['x-forwarded-for'] ||
+      req.socket.remoteAddress ||
+      req.ip ||
+      '127.0.0.1';
+
+    const ip_address = Array.isArray(rawIp)
+      ? rawIp[0]
+      : String(rawIp).split(',')[0].trim();
+
+    const user_agent =
+      req.headers['user-agent'] || 'Desconocido';
+
+    // ---------------------------------------------------------
+    // 1. Validaciones básicas
+    // ---------------------------------------------------------
 
     if (!identifier) {
-      return res.status(400).json({ error: 'Bad Request', message: 'ID o token del recibo requerido.' });
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'ID o token del recibo requerido.'
+      });
     }
 
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+    if (!finalSignature) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'No se recibió la imagen de la firma.'
+      });
+    }
+
+    if (
+      typeof finalSignature !== 'string' ||
+      !finalSignature.includes('base64,')
+    ) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'La firma recibida no tiene un formato Base64 válido.'
+      });
+    }
+
+    // ---------------------------------------------------------
+    // 2. Buscar recibo
+    // ---------------------------------------------------------
+
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        .test(identifier);
+
     let query = supabaseAdmin
       .from('payslips')
       .select(`
@@ -695,61 +743,216 @@ export const signPayslip = async (req, res) => {
       `);
 
     if (isUuid) {
-      query = query.or(`id.eq.${identifier},token.eq.${identifier}`);
+      query = query.or(
+        `id.eq.${identifier},token.eq.${identifier}`
+      );
     } else {
       query = query.eq('token', identifier);
     }
 
-    const { data: existingPayslip, error: fetchError } = await query.maybeSingle();
+    const {
+      data: existingPayslip,
+      error: fetchError
+    } = await query.maybeSingle();
 
-    if (fetchError || !existingPayslip) {
-      return res.status(404).json({
-        error: 'Not Found',
-        message: `No se encontró el recibo con ID o token ${identifier} para firmar.`,
+    if (fetchError) {
+      console.error(
+        '[SIGN] Error buscando recibo:',
+        fetchError
+      );
+
+      return res.status(500).json({
+        error: 'Database Error',
+        message: 'No se pudo consultar el recibo.'
       });
     }
 
-    let signedStoragePath = existingPayslip.signed_storage_path || null;
-
-    // Descargar duplicado para estampar firma
-    const dupPath = existingPayslip.duplicado_storage_path || existingPayslip.original_storage_path || existingPayslip.file_path;
-    if (dupPath && finalSignature) {
-      try {
-        const { data: dupBlob } = await supabaseAdmin.storage.from('payslips').download(dupPath);
-        if (dupBlob) {
-          const dupBuffer = Buffer.from(await dupBlob.arrayBuffer());
-          const signedBuffer = await pdfService.signPdfBuffer(dupBuffer, finalSignature, {
-            name: existingPayslip.employees?.name || existingPayslip.employee_name || 'Empleado',
-            cuil: existingPayslip.employees?.cuil || existingPayslip.detected_cuil,
-            ip: ip_address,
-            timestamp: new Date().toISOString(),
-            token: existingPayslip.token || identifier,
-            position,
-            analytics
-          });
-
-          signedStoragePath = `signed/${crypto.randomUUID()}_signed.pdf`;
-          await supabaseAdmin.storage
-            .from('payslips')
-            .upload(signedStoragePath, signedBuffer, {
-              contentType: 'application/pdf',
-              upsert: true
-            });
-        }
-      } catch (pdfErr) {
-        console.warn('⚠️ No se pudo estampar el PDF con pdf-lib, manteniendo firma gráfica:', pdfErr.message);
-      }
+    if (!existingPayslip) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message:
+          `No se encontró el recibo con ID o token ${identifier}.`
+      });
     }
+
+    // ---------------------------------------------------------
+    // 3. Determinar PDF que debe firmarse
+    // ---------------------------------------------------------
+
+    const sourcePdfPath =
+      existingPayslip.duplicado_storage_path ||
+      existingPayslip.original_storage_path ||
+      existingPayslip.file_path;
+
+    if (!sourcePdfPath) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message:
+          'El recibo no tiene un PDF disponible para firmar.'
+      });
+    }
+
+    console.log(
+      `[SIGN] PDF origen: ${sourcePdfPath}`
+    );
+
+    // ---------------------------------------------------------
+    // 4. Descargar PDF desde Supabase Storage
+    // ---------------------------------------------------------
+
+    const {
+      data: pdfBlob,
+      error: downloadError
+    } = await supabaseAdmin.storage
+      .from('payslips')
+      .download(sourcePdfPath);
+
+    if (downloadError || !pdfBlob) {
+      console.error(
+        '[SIGN] Error descargando PDF:',
+        downloadError
+      );
+
+      return res.status(500).json({
+        error: 'Storage Error',
+        message:
+          'No se pudo descargar el PDF original para firmarlo.',
+        details: downloadError?.message
+      });
+    }
+
+    const pdfBuffer =
+      Buffer.from(await pdfBlob.arrayBuffer());
+
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      return res.status(500).json({
+        error: 'PDF Error',
+        message:
+          'El PDF descargado está vacío.'
+      });
+    }
+
+    console.log(
+      `[SIGN] PDF descargado: ${pdfBuffer.length} bytes`
+    );
+
+    // ---------------------------------------------------------
+    // 5. Estampar firma dentro del PDF
+    // ---------------------------------------------------------
+
+    let signedBuffer;
+
+    try {
+      signedBuffer = await pdfService.signPdfBuffer(
+        pdfBuffer,
+        finalSignature,
+        {
+          name:
+            existingPayslip.employees?.name ||
+            existingPayslip.employee_name ||
+            'Empleado',
+
+          cuil:
+            existingPayslip.employees?.cuil ||
+            existingPayslip.detected_cuil ||
+            '',
+
+          ip: ip_address,
+
+          timestamp:
+            new Date().toISOString(),
+
+          token:
+            existingPayslip.token ||
+            identifier,
+
+          position: position || {}
+        }
+      );
+    } catch (signError) {
+      console.error(
+        '[SIGN] ERROR ESTAMPANDO FIRMA:',
+        signError
+      );
+
+      return res.status(500).json({
+        error: 'PDF Signing Error',
+        message:
+          'No se pudo incorporar la firma dentro del PDF.',
+        details: signError.message
+      });
+    }
+
+    // ---------------------------------------------------------
+    // 6. Validar PDF generado
+    // ---------------------------------------------------------
+
+    if (!signedBuffer || signedBuffer.length === 0) {
+      return res.status(500).json({
+        error: 'PDF Signing Error',
+        message:
+          'La generación del PDF firmado produjo un archivo vacío.'
+      });
+    }
+
+    console.log(
+      `[SIGN] PDF firmado generado: ${signedBuffer.length} bytes`
+    );
+
+    // ---------------------------------------------------------
+    // 7. Guardar PDF firmado en Storage
+    // ---------------------------------------------------------
+
+    const signedStoragePath =
+      `signed/${existingPayslip.id}_${Date.now()}_signed.pdf`;
+
+    const {
+      error: uploadError
+    } = await supabaseAdmin.storage
+      .from('payslips')
+      .upload(
+        signedStoragePath,
+        signedBuffer,
+        {
+          contentType: 'application/pdf',
+          upsert: true
+        }
+      );
+
+    if (uploadError) {
+      console.error(
+        '[SIGN] Error subiendo PDF firmado:',
+        uploadError
+      );
+
+      return res.status(500).json({
+        error: 'Storage Error',
+        message:
+          'No se pudo guardar el PDF firmado.',
+        details: uploadError.message
+      });
+    }
+
+    console.log(
+      `[SIGN] PDF firmado guardado: ${signedStoragePath}`
+    );
+
+    // ---------------------------------------------------------
+    // 8. Actualizar registro SOLO después de guardar el PDF
+    // ---------------------------------------------------------
 
     const auditData = {
       status: 'Firmado',
       signed_at: new Date().toISOString(),
       signed_storage_path: signedStoragePath,
       ip_address,
-      user_agent,
+      user_agent
     };
 
-    const { data: updatedPayslip, error: updateError } = await supabaseAdmin
+    const {
+      data: updatedPayslip,
+      error: updateError
+    } = await supabaseAdmin
       .from('payslips')
       .update(auditData)
       .eq('id', existingPayslip.id)
@@ -765,24 +968,47 @@ export const signPayslip = async (req, res) => {
       .single();
 
     if (updateError) {
+      console.error(
+        '[SIGN] Error actualizando payslip:',
+        updateError
+      );
+
+      // IMPORTANTE:
+      // El PDF ya fue guardado. No lo borramos automáticamente
+      // para evitar perder el documento firmado.
+
       return res.status(500).json({
         error: 'Database Error',
-        message: 'Error al actualizar el estado de auditoría de la firma del recibo.',
-        details: updateError.message,
+        message:
+          'El PDF fue generado, pero no se pudo actualizar el estado del recibo.',
+        details: updateError.message
       });
     }
 
+    // ---------------------------------------------------------
+    // 9. Respuesta final
+    // ---------------------------------------------------------
+
     return res.status(200).json({
       success: true,
-      message: 'Recibo firmado electrónicamente y auditado con éxito.',
-      payslip: updatedPayslip,
+      message:
+        'Recibo firmado electrónicamente y PDF firmado guardado correctamente.',
+      signed_storage_path: signedStoragePath,
+      payslip: updatedPayslip
     });
+
   } catch (err) {
-    console.error('Error en signPayslip:', err);
+
+    console.error(
+      'Error inesperado en signPayslip:',
+      err
+    );
+
     return res.status(500).json({
       error: 'Internal Server Error',
-      message: 'Ocurrió un error inesperado al procesar la firma del recibo.',
-      details: err.message,
+      message:
+        'Ocurrió un error inesperado al procesar la firma del recibo.',
+      details: err.message
     });
   }
 };
