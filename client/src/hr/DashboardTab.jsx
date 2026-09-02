@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  FileText, Users, Settings, Upload, CheckCircle,
-  Clock, Mail, Download, Trash2, Send, Plus,
+import { 
+  FileText, Users, Settings, Upload, CheckCircle, 
+  Clock, Mail, Download, Trash2, Send, Plus, 
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 export default function DashboardTab({ payslips, employees, refreshData, triggerAlert }) {
   const [selectedMonth, setSelectedMonth] = useState('');
-
+  
   // Obtener meses únicos presentes ordenados desc
   const months = [...new Set(payslips.map(p => p.month))].sort().reverse();
-
+  
   useEffect(() => {
     if (!selectedMonth && months.length > 0) {
       setSelectedMonth(months[0]);
@@ -35,7 +35,7 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
 
   const totalEmployees = employees.length;
   const conformityRate = totalPayslips > 0 ? Math.round((signedPayslips / totalPayslips) * 100) : 0;
-
+  
   // Cobertura del lote: cuántos empleados del total tienen al menos un recibo (original o duplicado) cargado en el mes
   const employeesWithPayslip = new Set(monthlyPayslips.filter(p => p.employeeId).map(p => p.employeeId));
   const missingEmployees = employees.filter(e => !employeesWithPayslip.has(e.id));
@@ -155,10 +155,10 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <div className="form-group" style={{ marginBottom: 0, flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
             <label style={{ whiteSpace: 'nowrap' }}>Período:</label>
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
+            <input 
+              type="month" 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(e.target.value)} 
               style={{ padding: '8px 12px' }}
             />
           </div>
@@ -223,7 +223,7 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
               </span>
             </div>
           </div>
-
+          
           <div className="chart-container" style={{ width: '100%', height: '220px', display: 'flex', alignItems: 'flex-end' }}>
             <svg viewBox="0 0 550 200" width="100%" height="100%">
               {/* Grid Lines */}
@@ -243,48 +243,48 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
                 const barWidth = 32;
                 const colWidth = 75;
                 const x = 50 + index * colWidth;
-
+                
                 const signedHeight = d.signed > 0 ? (d.signed / maxVal) * 140 : 0;
                 const pendingHeight = d.pending > 0 ? (d.pending / maxVal) * 140 : 0;
-
+                
                 const ySigned = 170 - signedHeight;
                 const yPending = ySigned - pendingHeight;
 
                 return (
                   <g key={d.month} className="bar-group">
                     <title>{`Mes: ${d.month}\nFirmados: ${d.signed}\nPendientes: ${d.pending}\nTotal: ${d.total}`}</title>
-
+                    
                     {/* Bar signed */}
                     {d.signed > 0 && (
-                      <rect
-                        x={x}
-                        y={ySigned}
-                        width={barWidth}
-                        height={signedHeight}
-                        fill="var(--success)"
+                      <rect 
+                        x={x} 
+                        y={ySigned} 
+                        width={barWidth} 
+                        height={signedHeight} 
+                        fill="var(--success)" 
                         opacity="0.85"
                         rx="2"
                       />
                     )}
                     {/* Bar pending */}
                     {d.pending > 0 && (
-                      <rect
-                        x={x}
-                        y={yPending}
-                        width={barWidth}
-                        height={pendingHeight}
-                        fill="var(--primary)"
+                      <rect 
+                        x={x} 
+                        y={yPending} 
+                        width={barWidth} 
+                        height={pendingHeight} 
+                        fill="var(--primary)" 
                         opacity="0.85"
                         rx="2"
                       />
                     )}
 
                     {/* Month Label */}
-                    <text
-                      x={x + barWidth / 2}
-                      y="190"
-                      fill="var(--text-secondary)"
-                      fontSize="10"
+                    <text 
+                      x={x + barWidth / 2} 
+                      y="190" 
+                      fill="var(--text-secondary)" 
+                      fontSize="10" 
                       textAnchor="middle"
                     >
                       {d.month.split('-')[1] + '/' + d.month.split('-')[0].substring(2)}
@@ -299,7 +299,7 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
         {/* Distribución del mes (Dona) */}
         <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <h3 style={{ fontSize: '18px', marginBottom: '12px' }}>Estado del Lote ({selectedMonth})</h3>
-
+          
           {totalPayslips === 0 ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '13px', padding: '20px 0' }}>
               <AlertTriangle size={32} style={{ marginBottom: '8px' }} />
@@ -311,55 +311,55 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
               <div style={{ position: 'relative', width: '120px', height: '120px', flexShrink: 0 }}>
                 <svg width="100%" height="100%" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
                   <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="12" />
-
+                  
                   {/* Firmados */}
                   {signedLength > 0 && (
-                    <circle
-                      cx="60"
-                      cy="60"
-                      r="50"
-                      fill="none"
-                      stroke="var(--success)"
-                      strokeWidth="12"
+                    <circle 
+                      cx="60" 
+                      cy="60" 
+                      r="50" 
+                      fill="none" 
+                      stroke="var(--success)" 
+                      strokeWidth="12" 
                       strokeDasharray={`${signedLength} ${perimeter - signedLength}`}
                       strokeDashoffset="0"
                     />
                   )}
                   {/* Enviados */}
                   {sentLength > 0 && (
-                    <circle
-                      cx="60"
-                      cy="60"
-                      r="50"
-                      fill="none"
-                      stroke="var(--warning)"
-                      strokeWidth="12"
+                    <circle 
+                      cx="60" 
+                      cy="60" 
+                      r="50" 
+                      fill="none" 
+                      stroke="var(--warning)" 
+                      strokeWidth="12" 
                       strokeDasharray={`${sentLength} ${perimeter - sentLength}`}
                       strokeDashoffset={`-${signedLength}`}
                     />
                   )}
                   {/* Programados */}
                   {scheduledLength > 0 && (
-                    <circle
-                      cx="60"
-                      cy="60"
-                      r="50"
-                      fill="none"
-                      stroke="#8b5cf6"
-                      strokeWidth="12"
+                    <circle 
+                      cx="60" 
+                      cy="60" 
+                      r="50" 
+                      fill="none" 
+                      stroke="#8b5cf6" 
+                      strokeWidth="12" 
                       strokeDasharray={`${scheduledLength} ${perimeter - scheduledLength}`}
                       strokeDashoffset={`-${signedLength + sentLength}`}
                     />
                   )}
                   {/* Cargados */}
                   {uploadedLength > 0 && (
-                    <circle
-                      cx="60"
-                      cy="60"
-                      r="50"
-                      fill="none"
-                      stroke="var(--secondary)"
-                      strokeWidth="12"
+                    <circle 
+                      cx="60" 
+                      cy="60" 
+                      r="50" 
+                      fill="none" 
+                      stroke="var(--secondary)" 
+                      strokeWidth="12" 
                       strokeDasharray={`${uploadedLength} ${perimeter - uploadedLength}`}
                       strokeDashoffset={`-${signedLength + sentLength + scheduledLength}`}
                     />
@@ -435,7 +435,7 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
               <AlertTriangle size={18} style={{ color: missingEmployees.length > 0 ? 'var(--warning)' : 'var(--success)' }} />
               Auditoría de Carga (Cobertura: {coverageRate}%)
             </h3>
-
+            
             {missingEmployees.length === 0 ? (
               <div style={{ color: 'var(--success)', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16, 185, 129, 0.05)', padding: '12px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
                 <span>✔ <b>¡Excelente!</b> Todos los empleados registrados ({totalEmployees}) tienen al menos un recibo cargado para el mes de {selectedMonth}.</span>
@@ -447,13 +447,13 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '100px', overflowY: 'auto', paddingRight: '4px' }}>
                   {missingEmployees.map(emp => (
-                    <span
-                      key={emp.id}
-                      style={{
-                        fontSize: '11px',
-                        padding: '4px 10px',
-                        borderRadius: '4px',
-                        background: 'rgba(245, 158, 11, 0.08)',
+                    <span 
+                      key={emp.id} 
+                      style={{ 
+                        fontSize: '11px', 
+                        padding: '4px 10px', 
+                        borderRadius: '4px', 
+                        background: 'rgba(245, 158, 11, 0.08)', 
                         border: '1px solid rgba(245, 158, 11, 0.15)',
                         color: '#fef08a'
                       }}
@@ -471,7 +471,7 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
         {/* Pendientes Críticos */}
         <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>Recordatorios Pendientes (Urgentes)</h3>
-
+          
           <div className="table-container" style={{ flex: 1, maxHeight: '200px', overflowY: 'auto' }}>
             {criticalList.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '30px 20px', color: 'var(--text-muted)', fontSize: '13px' }}>
@@ -494,8 +494,8 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CUIL: {ps.employeeCuil}</div>
                       </td>
                       <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                        <span style={{
-                          fontSize: '11px',
+                        <span style={{ 
+                          fontSize: '11px', 
                           fontWeight: 'bold',
                           color: ps.elapsedDays > 3 ? 'var(--danger)' : 'var(--warning)',
                           background: ps.elapsedDays > 3 ? 'var(--danger-glow)' : 'var(--warning-glow)',
@@ -506,8 +506,8 @@ export default function DashboardTab({ payslips, employees, refreshData, trigger
                         </span>
                       </td>
                       <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                        <button
-                          className="btn btn-secondary"
+                        <button 
+                          className="btn btn-secondary" 
                           style={{ padding: '4px 10px', fontSize: '12px' }}
                           onClick={() => sendReminder(ps.id)}
                           title="Enviar mail de recordatorio individual"

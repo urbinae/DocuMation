@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 `;
 
 // Create directories

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Clock, Download, Search, ShieldAlert } from 'lucide-react';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 export default function RiskTab({ payslips, employees }) {
   const [thresholds, setThresholds] = useState({
@@ -65,7 +65,7 @@ export default function RiskTab({ payslips, employees }) {
         <ShieldAlert color="var(--danger)" size={24} />
         <h3 style={{ margin: 0 }}>Panel de Riesgo de Fuga</h3>
       </div>
-
+      
       <div style={{ marginBottom: '24px', display: 'flex', gap: '20px' }}>
         <div style={{ background: 'rgba(255, 112, 67, 0.1)', padding: '16px', borderRadius: '8px', flex: 1, border: '1px solid rgba(255, 112, 67, 0.2)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--danger)', marginBottom: '8px' }}>

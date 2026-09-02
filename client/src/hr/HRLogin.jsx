@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  FileText, Users, Settings, Upload, CheckCircle,
-  Clock, Mail, Download, Trash2, Send, Plus,
+import { 
+  FileText, Users, Settings, Upload, CheckCircle, 
+  Clock, Mail, Download, Trash2, Send, Plus, 
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 import ThemeToggle from '../shared/ThemeToggle';
 export default function HRLogin({ setView, setHrSession }) {
@@ -112,47 +112,20 @@ export default function HRLogin({ setView, setHrSession }) {
     setLoading(true);
 
     try {
-      let loggedEmp = null;
-      try {
-        const res = await fetch(`${API_BASE}/api/employee/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cuil, password })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          loggedEmp = data.employee;
-        }
-      } catch (err) {}
+      const res = await fetch(`${API_BASE}/api/employee/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cuil, password })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || 'Fallo de autenticación');
 
-      // Fallback a mock data si no hay backend activo
-      if (!loggedEmp) {
-        let savedEmps = [];
-        try {
-          const saved = localStorage.getItem('mock_employees');
-          savedEmps = saved ? JSON.parse(saved) : [];
-        } catch (e) {}
-
-        const cleanCuil = cuil.replace(/\D/g, '');
-        loggedEmp = savedEmps.find(emp => {
-          const empCleanCuil = emp.cuil ? emp.cuil.replace(/\D/g, '') : '';
-          return empCleanCuil === cleanCuil || emp.cuil === cuil || emp.email === cuil;
-        });
-
-        if (!loggedEmp && cuil) {
-          loggedEmp = {
-            id: Date.now(),
-            name: cuil.includes('@') ? cuil.split('@')[0] : 'Administrador RRHH',
-            email: cuil.includes('@') ? cuil : 'rrhh@empresa.com',
-            cuil: cuil,
-            role: 'rrhh'
-          };
-        }
+      if (data.employee.role !== 'rrhh') {
+        throw new Error('Acceso denegado. Tu cuenta no tiene permisos de RRHH.');
       }
-
-      if (!loggedEmp) throw new Error('Fallo de autenticación');
-
-      setHrSession({ isLoggedIn: true, employee: loggedEmp });
+      
+      setHrSession({ isLoggedIn: true, employee: data.employee });
       setView('hr');
     } catch (err) {
       setError(err.message);
@@ -182,7 +155,7 @@ export default function HRLogin({ setView, setHrSession }) {
 
         {/* Control de pestañas */}
         <div style={{ display: 'flex', borderRadius: '8px', background: 'rgba(0,0,0,0.2)', padding: '4px', marginBottom: '24px' }}>
-          <button
+          <button 
             type="button"
             className="btn"
             style={{
@@ -200,7 +173,7 @@ export default function HRLogin({ setView, setHrSession }) {
           >
             Cuenta Personal RRHH
           </button>
-          <button
+          <button 
             type="button"
             className="btn"
             style={{
@@ -231,9 +204,9 @@ export default function HRLogin({ setView, setHrSession }) {
           <form onSubmit={handlePersonalLogin}>
             <div className="form-group">
               <label>CUIL / CUIT de RRHH</label>
-              <input
-                type="text"
-                placeholder="Ej. 20-12345678-9"
+              <input 
+                type="text" 
+                placeholder="Ej. 20-12345678-9" 
                 value={cuil}
                 onChange={(e) => setCuil(e.target.value)}
                 required
@@ -241,9 +214,9 @@ export default function HRLogin({ setView, setHrSession }) {
             </div>
             <div className="form-group">
               <label>Contraseña Personal</label>
-              <input
-                type="password"
-                placeholder="••••••••"
+              <input 
+                type="password" 
+                placeholder="••••••••" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -260,17 +233,17 @@ export default function HRLogin({ setView, setHrSession }) {
                   <span style={{ padding: '0 10px', fontSize: '12px' }}>O iniciar sesión con</span>
                   <hr style={{ flex: 1, border: 0, borderTop: '1px solid var(--border-color)' }} />
                 </div>
-                <div
-                  id="google-signin-btn-container-hr"
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'center',
+                <div 
+                  id="google-signin-btn-container-hr" 
+                  style={{ 
+                    display: 'flex', 
+                    justifyContent: 'center', 
                     minHeight: '40px',
                     background: 'white',
                     borderRadius: '4px',
                     overflow: 'hidden',
                     padding: '1px'
-                  }}
+                  }} 
                 />
               </>
             )}
@@ -279,9 +252,9 @@ export default function HRLogin({ setView, setHrSession }) {
           <form onSubmit={handleMasterLogin}>
             <div className="form-group">
               <label>Contraseña Maestra de Acceso</label>
-              <input
-                type="password"
-                placeholder="••••••••"
+              <input 
+                type="password" 
+                placeholder="••••••••" 
                 value={masterPassword}
                 onChange={(e) => setMasterPassword(e.target.value)}
                 required
@@ -293,9 +266,9 @@ export default function HRLogin({ setView, setHrSession }) {
           </form>
         )}
 
-        <button
-          type="button"
-          className="btn btn-secondary"
+        <button 
+          type="button" 
+          className="btn btn-secondary" 
           style={{ width: '100%', marginTop: '16px' }}
           onClick={() => setView('hub')}
         >

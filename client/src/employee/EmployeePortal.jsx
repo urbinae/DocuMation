@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  FileText, Users, Settings, Upload, CheckCircle,
-  Clock, Mail, Download, Trash2, Send, Plus,
+import { 
+  FileText, Users, Settings, Upload, CheckCircle, 
+  Clock, Mail, Download, Trash2, Send, Plus, 
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 import ThemeToggle from '../shared/ThemeToggle';
 export default function EmployeePortal({ token, payslipToSign = null, handleLogout, isDirectSign = true, theme, toggleTheme }) {
@@ -18,14 +18,14 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
   const [consent, setConsent] = useState(false);
   const [isSignedSuccess, setIsSignedSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
+  
   const [signaturePos, setSignaturePos] = useState({ x: 50, y: 50 });
   const [isDraggingSig, setIsDraggingSig] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [pdfDim, setPdfDim] = useState({ width: 0, height: 0 });
   const [sigSize, setSigSize] = useState({ width: 160, height: 100 });
   const [isResizing, setIsResizing] = useState(false);
-
+  
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
 
@@ -35,7 +35,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     const rect = e.currentTarget.getBoundingClientRect();
     setDragOffset({ x: clientX - rect.left, y: clientY - rect.top });
-    if (e.currentTarget.setPointerCapture && e.pointerId) e.currentTarget.setPointerCapture(e.pointerId);
+    if(e.currentTarget.setPointerCapture && e.pointerId) e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const handlePdfMouseMove = (e) => {
@@ -45,34 +45,34 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
     const parentRect = e.currentTarget.getBoundingClientRect();
     let newX = clientX - parentRect.left - dragOffset.x;
     let newY = clientY - parentRect.top - dragOffset.y;
-
+    
     newX = Math.max(0, Math.min(newX, pdfDim.width - sigSize.width));
     newY = Math.max(0, Math.min(newY, pdfDim.height - sigSize.height));
-
+    
     setSignaturePos({ x: newX, y: newY });
   };
 
   const handlePdfMouseUp = (e) => {
     setIsDraggingSig(false);
-    if (e && e.currentTarget && e.currentTarget.releasePointerCapture && e.pointerId) e.currentTarget.releasePointerCapture(e.pointerId);
+    if(e && e.currentTarget && e.currentTarget.releasePointerCapture && e.pointerId) e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
   const handleResizePointerDown = (e) => {
     e.stopPropagation();
     setIsResizing(true);
-    if (e.target.setPointerCapture && e.pointerId) e.target.setPointerCapture(e.pointerId);
+    if(e.target.setPointerCapture && e.pointerId) e.target.setPointerCapture(e.pointerId);
   };
 
   const handleResizePointerMove = (e) => {
     if (!isResizing) return;
     const pageEl = document.querySelector('.react-pdf__Page');
     if (!pageEl) return;
-
+    
     const parentRect = pageEl.getBoundingClientRect();
-
+    
     const boxLeft = parentRect.left + signaturePos.x;
     const newWidth = e.clientX - boxLeft;
-
+    
     const finalWidth = Math.max(100, Math.min(newWidth, pdfDim.width - signaturePos.x));
     const finalHeight = finalWidth * (100 / 160); // Mantener proporción original 160x100
 
@@ -82,7 +82,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
   const handleResizePointerUp = (e) => {
     e.stopPropagation();
     setIsResizing(false);
-    if (e.target.releasePointerCapture && e.pointerId) e.target.releasePointerCapture(e.pointerId);
+    if(e.target.releasePointerCapture && e.pointerId) e.target.releasePointerCapture(e.pointerId);
   };
 
   useEffect(() => {
@@ -91,7 +91,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
         const res = await fetch(`${API_BASE}/api/sign/token/${token}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Token no válido');
-
+        
         setPayslip(data);
         if (data.status === 'Firmado') {
           setIsSignedSuccess(true);
@@ -122,14 +122,14 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
 
   useEffect(() => {
     if (loading || error || isSignedSuccess || !canvasRef.current) return;
-
+    
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-
+    
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
-
+    
     ctx.strokeStyle = '#0f172a';
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
@@ -140,14 +140,14 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-
+    
     if (e.touches && e.touches.length > 0) {
       return {
         x: e.touches[0].clientX - rect.left,
         y: e.touches[0].clientY - rect.top
       };
     }
-
+    
     return {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top
@@ -160,7 +160,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const { x, y } = getCoordinates(e);
-
+    
     ctx.beginPath();
     ctx.moveTo(x, y);
     isDrawingRef.current = true;
@@ -172,7 +172,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     const { x, y } = getCoordinates(e);
-
+    
     ctx.lineTo(x, y);
     ctx.stroke();
   };
@@ -245,15 +245,15 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
       setIsSubmitting(true);
 
       // Determinar endpoint y método a usar según si es acceso directo o por panel
-      const endpoint = isDirectSign
-        ? `${API_BASE}/api/sign/${token}`
+      const endpoint = isDirectSign 
+        ? `${API_BASE}/api/sign/${token}` 
         : `${API_BASE}/api/sign-by-id/${payslip.id}`;
 
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          signatureImage: signatureBase64,
+        body: JSON.stringify({ 
+          signatureImage: signatureBase64, 
           consent: true,
           position: activePdfTab === 'duplicado' ? {
             x: isNaN(signaturePos.x) ? 50 : signaturePos.x,
@@ -268,7 +268,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al procesar la firma');
-
+      
       setIsSignedSuccess(true);
     } catch (err) {
       window.alert("Hubo un error al firmar: " + err.message);
@@ -278,8 +278,8 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
   };
 
   // URL para el PDF stream
-  const pdfStreamUrl = isDirectSign
-    ? `${API_BASE}/api/sign/view/${token}/${activePdfTab}#toolbar=0`
+  const pdfStreamUrl = isDirectSign 
+    ? `${API_BASE}/api/sign/view/${token}/${activePdfTab}#toolbar=0` 
     : `${API_BASE}/api/payslips/view/${payslip?.id}/${activePdfTab}#toolbar=0`;
 
   if (loading) {
@@ -339,10 +339,10 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
           </div>
           <h2>Recibo Firmado Exitosamente</h2>
           <p>
-            Tu firma ha sido estampada con éxito en la copia **Duplicado** del recibo para el período de <b>{payslip.month}</b>.
+            Tu firma ha sido estampada con éxito en la copia **Duplicado** del recibo para el período de <b>{payslip.month}</b>. 
             Te hemos enviado un correo de confirmación con las copias adjuntas para tu resguardo personal.
           </p>
-
+          
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '350px', margin: '0 auto' }}>
             {payslip.hasOriginal && (
               <a href={`${API_BASE}/api/download/original/${payslip.id}`} className="btn btn-secondary">
@@ -364,13 +364,13 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
                 Vista Previa: Período {payslip.month}
               </span>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button
+                <button 
                   className={`pdf-tab-btn ${activePdfTab === 'original' ? 'active' : ''}`}
                   onClick={() => setActivePdfTab('original')}
                 >
                   Original (Tu copia)
                 </button>
-                <button
+                <button 
                   className={`pdf-tab-btn ${activePdfTab === 'duplicado' ? 'active' : ''}`}
                   onClick={() => setActivePdfTab('duplicado')}
                 >
@@ -378,16 +378,16 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
                 </button>
               </div>
             </div>
-
-            <div
+            
+            <div 
               style={{ width: '100%', overflow: 'auto', background: '#e5e7eb', minHeight: '500px', display: 'flex', justifyContent: 'center', padding: '20px' }}
             >
-              <Document
+              <Document 
                 file={pdfStreamUrl}
                 loading={<div style={{ padding: '20px' }}>Cargando PDF...</div>}
                 error={<div style={{ padding: '20px', color: 'red' }}>Error al cargar el PDF</div>}
               >
-                <div
+                <div 
                   style={{ position: 'relative', display: 'inline-block', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   onMouseMove={handlePdfMouseMove}
                   onMouseUp={handlePdfMouseUp}
@@ -395,9 +395,9 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
                   onTouchMove={handlePdfMouseMove}
                   onTouchEnd={handlePdfMouseUp}
                 >
-                  <Page
-                    pageNumber={1}
-                    renderTextLayer={false}
+                  <Page 
+                    pageNumber={1} 
+                    renderTextLayer={false} 
                     renderAnnotationLayer={false}
                     onLoadSuccess={({ width, height }) => {
                       setPdfDim({ width, height });
@@ -433,7 +433,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
                       onPointerCancel={handlePdfMouseUp}
                     >
                       Arrastrar Firma
-
+                      
                       <div
                         style={{
                           position: 'absolute',
@@ -463,7 +463,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
               <p style={{ fontSize: '13px', marginBottom: '20px' }}>
                 Estás visualizando el recibo de haberes. Para firmar, lee el consentimiento, dibuja tu firma manuscrita en el recuadro inferior y presiona "Confirmar y Enviar".
               </p>
-
+              
               <div className="signature-box">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Dibuja tu firma o sube una imagen</label>
@@ -477,9 +477,9 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
                     </button>
                   </div>
                 </div>
-
+                
                 <div className="signature-canvas-container">
-                  <canvas
+                  <canvas 
                     ref={canvasRef}
                     className="signature-canvas"
                     onMouseDown={startDrawing}
@@ -494,9 +494,9 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
               </div>
 
               <div className="consent-container">
-                <input
-                  type="checkbox"
-                  id="consent-check"
+                <input 
+                  type="checkbox" 
+                  id="consent-check" 
                   checked={consent}
                   onChange={(e) => setConsent(e.target.checked)}
                 />
@@ -504,9 +504,9 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
                   Declaro bajo juramento que los datos liquidados en este recibo son correctos y doy mi conformidad firmando electrónicamente el documento Duplicado.
                 </label>
               </div>
-
-              <button
-                className="btn btn-primary"
+              
+              <button 
+                className="btn btn-primary" 
                 style={{ width: '100%', marginTop: '24px', padding: '14px', fontSize: '16px' }}
                 onClick={handleConfirmSign}
                 disabled={isSubmitting}
@@ -524,7 +524,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
                 )}
               </button>
             </div>
-
+            
             <div className="glass-panel" style={{ padding: '16px', background: 'rgba(165, 194, 63, 0.05)', border: '1px solid rgba(165, 194, 63, 0.15)' }}>
               <h4 style={{ fontSize: '13px', color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
                 🛡 Transacción Segura

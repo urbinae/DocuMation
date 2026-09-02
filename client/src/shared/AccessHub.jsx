@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  FileText, Users, Settings, Upload, CheckCircle,
-  Clock, Mail, Download, Trash2, Send, Plus,
+import { 
+  FileText, Users, Settings, Upload, CheckCircle, 
+  Clock, Mail, Download, Trash2, Send, Plus, 
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 export default function AccessHub({ setView }) {
   return (
@@ -25,8 +25,8 @@ export default function AccessHub({ setView }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
           {/* Card Empleados */}
-          <div
-            className="glass-panel"
+          <div 
+            className="glass-panel" 
             style={{ cursor: 'pointer', background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.05)' }}
             onClick={() => setView('employee-login')}
           >
@@ -40,8 +40,8 @@ export default function AccessHub({ setView }) {
           </div>
 
           {/* Card RRHH */}
-          <div
-            className="glass-panel"
+          <div 
+            className="glass-panel" 
             style={{ cursor: 'pointer', background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.05)' }}
             onClick={() => setView('hr-login')}
           >

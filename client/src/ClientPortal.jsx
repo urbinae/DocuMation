@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Document, Page } from 'react-pdf';
 import { CheckCircle, AlertTriangle, Download, Briefcase } from 'lucide-react';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 export function ClientPortal({ token, theme, toggleTheme }) {
   const [contract, setContract] = useState(null);
@@ -33,9 +33,9 @@ export function ClientPortal({ token, theme, toggleTheme }) {
         setError(null);
         const res = await fetch(`${API_BASE}/api/contracts/verify/${token}`);
         const data = await res.json();
-
+        
         if (!res.ok) throw new Error(data.error || 'Error al cargar el contrato');
-
+        
         setContract(data.contract);
         setClient(data.client);
       } catch (err) {
@@ -67,12 +67,12 @@ export function ClientPortal({ token, theme, toggleTheme }) {
     if (!isDragging) return;
     const pageEl = document.querySelector('.react-pdf__Page') || document.getElementById('pdf-page-container');
     if (!pageEl) return;
-
+    
     const containerRect = pageEl.getBoundingClientRect();
-
+    
     let newX = e.clientX - containerRect.left - dragOffset.x;
     let newY = e.clientY - containerRect.top - dragOffset.y;
-
+    
     // Límites para no salirse del PDF reales
     newX = Math.max(0, Math.min(newX, pageEl.offsetWidth - sigSize.width));
     newY = Math.max(0, Math.min(newY, pageEl.offsetHeight - sigSize.height));
@@ -95,11 +95,11 @@ export function ClientPortal({ token, theme, toggleTheme }) {
     if (!isResizing) return;
     const pageEl = document.querySelector('.react-pdf__Page') || document.getElementById('pdf-page-container');
     if (!pageEl) return;
-
+    
     const containerRect = pageEl.getBoundingClientRect();
     const boxLeft = containerRect.left + signaturePos.x;
     const newWidth = e.clientX - boxLeft;
-
+    
     // Mantener aspect ratio aproximado (2:1) y limitar a contenedor
     const finalWidth = Math.max(100, Math.min(newWidth, pageEl.offsetWidth - signaturePos.x));
     const finalHeight = finalWidth / 2;
@@ -145,7 +145,7 @@ export function ClientPortal({ token, theme, toggleTheme }) {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al firmar');
-
+      
       setSuccess(true);
     } catch (err) {
       alert(err.message);
@@ -186,7 +186,7 @@ export function ClientPortal({ token, theme, toggleTheme }) {
       </nav>
 
       <main className="portal-content" style={{ maxWidth: '1200px', margin: '0 auto' }}>
-
+        
         {/* Lado Izquierdo: Visor PDF */}
         <div className="glass-panel" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
           <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.2)' }}>
@@ -198,7 +198,7 @@ export function ClientPortal({ token, theme, toggleTheme }) {
               <Download size={16} /> Descargar
             </button>
           </div>
-
+          
           <div style={{ flex: 1, overflow: 'auto', padding: '20px', background: '#333', display: 'flex', justifyContent: 'center' }}>
             <div id="pdf-page-container" style={{ position: 'relative', display: 'inline-block', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
               <Document
@@ -206,16 +206,16 @@ export function ClientPortal({ token, theme, toggleTheme }) {
                 onLoadSuccess={onDocumentLoadSuccess}
                 loading={<div style={{ padding: '40px', color: 'white' }}>Cargando documento...</div>}
               >
-                <Page
-                  pageNumber={1}
-                  renderTextLayer={false}
+                <Page 
+                  pageNumber={1} 
+                  renderTextLayer={false} 
                   renderAnnotationLayer={false}
                   width={800}
                 />
               </Document>
 
               {!success && contract.status !== 'Firmado' && numPages && (
-                <div
+                <div 
                   className="signature-box"
                   style={{
                     position: 'absolute',
@@ -243,7 +243,7 @@ export function ClientPortal({ token, theme, toggleTheme }) {
                 >
                   <span>Mover área de firma</span>
                   <div style={{ marginTop: '8px', opacity: 0.5 }}>Firma del Representante Legal</div>
-
+                  
                   {/* Handle de redimensionamiento */}
                   <div
                     style={{
@@ -272,7 +272,7 @@ export function ClientPortal({ token, theme, toggleTheme }) {
           <h2 style={{ fontSize: '20px', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
             Firma Electrónica
           </h2>
-
+          
           <div style={{ marginTop: '20px', marginBottom: '24px' }}>
             <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px' }}>Empresa Cliente:</p>
             <p style={{ fontSize: '18px', fontWeight: 'bold' }}>{client ? client.empresa : 'Cliente B2B'}</p>
@@ -302,27 +302,27 @@ export function ClientPortal({ token, theme, toggleTheme }) {
           ) : (
             <div style={{ marginTop: 'auto' }}>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', marginBottom: '16px' }}>
-                <input
-                  type="checkbox"
-                  checked={stampAllPages}
+                <input 
+                  type="checkbox" 
+                  checked={stampAllPages} 
                   onChange={(e) => setStampAllPages(e.target.checked)}
                   style={{ marginTop: '3px' }}
                 />
                 <span style={{ fontWeight: '600' }}>Estampar firma digital en todas las páginas</span>
               </label>
-
+              
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '13px', color: 'var(--text-secondary)', cursor: 'pointer', marginBottom: '20px' }}>
-                <input
-                  type="checkbox"
-                  checked={agreed}
+                <input 
+                  type="checkbox" 
+                  checked={agreed} 
                   onChange={(e) => setAgreed(e.target.checked)}
                   style={{ marginTop: '3px' }}
                 />
                 <span>Declaro que tengo la representación legal y autorizo este acuerdo vinculante con la plataforma DocuMation B2B.</span>
               </label>
-
-              <button
-                className="btn btn-primary"
+              
+              <button 
+                className="btn btn-primary" 
                 style={{ width: '100%', height: '48px', fontSize: '16px', background: 'var(--warning)', fontWeight: 'bold' }}
                 disabled={!agreed || signing}
                 onClick={handleSign}

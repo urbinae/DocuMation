@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Users, Lock, FileText, UploadCloud, Trash2, LogOut, CheckCircle,
+import { 
+  Users, Lock, FileText, UploadCloud, Trash2, LogOut, CheckCircle, 
   Clock, TrendingUp, Briefcase, Plus, X, Search, Link, Folder, ArrowLeft, ArrowRight, Download, Settings, Edit, Loader2, Send, Menu
 } from 'lucide-react';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 // ==========================================
 // LOGIN COMERCIAL
@@ -53,33 +53,33 @@ export function CommercialLogin({ setView, setCommercialSession }) {
           <h2 style={{ fontSize: '24px', marginBottom: '8px' }}>Acceso Comercial</h2>
           <p style={{ color: 'var(--text-secondary)' }}>Ingresa tus credenciales B2B</p>
         </div>
-
+        
         {error && <div className="alert-error" style={{ marginBottom: '20px' }}>{error}</div>}
 
         <form onSubmit={handleLogin}>
           <div className="form-group">
             <label>Correo Electrónico</label>
-            <input
-              type="text"
-              className="form-control"
+            <input 
+              type="text" 
+              className="form-control" 
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="tu@empresa.com"
-              required
+              required 
             />
           </div>
           <div className="form-group">
             <label>Contraseña</label>
-            <input
-              type="password"
-              className="form-control"
+            <input 
+              type="password" 
+              className="form-control" 
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"
-              required
+              required 
             />
           </div>
-
+          
           <button type="submit" className="btn btn-primary" style={{ width: '100%', background: 'var(--warning)', marginTop: '10px' }} disabled={loading}>
             {loading ? 'Ingresando...' : 'Iniciar Sesión'}
           </button>
@@ -105,7 +105,7 @@ export function CommercialDashboard({ session, handleLogout }) {
   const [clients, setClients] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [selectedClientFolder, setSelectedClientFolder] = useState(null);
-
+  
   // ABM y Configuración
   const [clientsMode, setClientsMode] = useState('repo'); // 'repo', 'abm', 'settings'
   const [fuzzyThreshold, setFuzzyThreshold] = useState(80);
@@ -114,7 +114,7 @@ export function CommercialDashboard({ session, handleLogout }) {
   const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [showClientModal, setShowClientModal] = useState(false);
   const [editClientData, setEditClientData] = useState({ id: null, empresa: '', name: '', email: '' });
-
+  
   const [commercialUsers, setCommercialUsers] = useState([]);
   const [showCommercialModal, setShowCommercialModal] = useState(false);
   const [editCommercialData, setEditCommercialData] = useState({ id: null, name: '', email: '', password: '' });
@@ -169,7 +169,7 @@ export function CommercialDashboard({ session, handleLogout }) {
     if (sortConfig.key !== key) return <span style={{ opacity: 0.3, marginLeft: '4px', fontSize: '12px' }}>↕</span>;
     return <span style={{ marginLeft: '4px', color: 'var(--warning)', fontWeight: 'bold' }}>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>;
   };
-
+  
   const loadData = async () => {
     try {
       const [resKpis, resContracts, resClients, resSettings, resUsers] = await Promise.all([
@@ -216,7 +216,7 @@ export function CommercialDashboard({ session, handleLogout }) {
           method: 'POST',
           body: formData
         });
-
+        
         if (res.status === 409) {
           duplicateCount++;
         } else if (!res.ok) {
@@ -228,7 +228,7 @@ export function CommercialDashboard({ session, handleLogout }) {
         errorCount++;
       }
     }
-
+    
     setUploading(false);
     e.target.value = null; // Reset input
     loadData();
@@ -261,10 +261,10 @@ export function CommercialDashboard({ session, handleLogout }) {
 
   const handleBulkDelete = async () => {
     if (selectedContracts.length === 0) return;
-
+    
     const hasSigned = (Array.isArray(contracts) ? contracts : []).some(c => selectedContracts.includes(c.id) && c.status === 'Firmado');
     if (!window.confirm(`¿Estás seguro de que deseas eliminar permanentemente ${selectedContracts.length} contrato(s)? Esta acción no se puede deshacer.`)) return;
-
+    
     if (hasSigned) {
       if (!window.confirm("¡ATENCIÓN CRÍTICA! Estás intentando eliminar contratos que ya están FIRMADOS por el cliente y tienen validez legal. ¿Estás absolutamente seguro de querer proceder?")) return;
     }
@@ -276,7 +276,7 @@ export function CommercialDashboard({ session, handleLogout }) {
         body: JSON.stringify({ contractIds: selectedContracts })
       });
       if (!res.ok) throw new Error('Error al eliminar contratos en lote');
-
+      
       const data = await res.json();
       setSelectedContracts([]);
       loadData();
@@ -302,7 +302,7 @@ export function CommercialDashboard({ session, handleLogout }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al enviar de forma masiva');
-
+      
       let msg = `Proceso de envío finalizado.\n\nEnviados con éxito: ${data.results.sent}\nFallidos: ${data.results.failed}`;
       if (data.results.errors.length > 0) {
         msg += `\n\nErrores detallados:\n- ` + data.results.errors.join('\n- ');
@@ -349,7 +349,7 @@ export function CommercialDashboard({ session, handleLogout }) {
       await fetch(`${API_BASE}/api/commercial/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify({ 
           fuzzyMatchThreshold: fuzzyThreshold,
           aiProvider,
           groqApiKey,
@@ -384,7 +384,7 @@ export function CommercialDashboard({ session, handleLogout }) {
   };
 
   const handleDeleteCommercial = async (id) => {
-    if (!window.confirm("¿Seguro de eliminar a este usuario comercial?")) return;
+    if(!window.confirm("¿Seguro de eliminar a este usuario comercial?")) return;
     try {
       const res = await fetch(`${API_BASE}/api/commercial-users/${id}`, { method: 'DELETE' });
       if (res.ok) loadData();
@@ -427,7 +427,7 @@ export function CommercialDashboard({ session, handleLogout }) {
   const sortedContracts = [...filteredContracts].sort((a, b) => {
     let valA = a[sortConfig.key];
     let valB = b[sortConfig.key];
-
+    
     // Manejar sub-objetos y casos especiales
     if (sortConfig.key === 'fechaFirmaDocumento' || sortConfig.key === 'vencimiento') {
       valA = a.metadata?.[sortConfig.key] || '';
@@ -441,7 +441,7 @@ export function CommercialDashboard({ session, handleLogout }) {
       valA = (valA || '').toLowerCase();
       valB = (valB || '').toLowerCase();
     }
-
+    
     // Evitar errores si undefined
     if (valA === undefined || valA === null) valA = '';
     if (valB === undefined || valB === null) valB = '';
@@ -465,45 +465,45 @@ export function CommercialDashboard({ session, handleLogout }) {
             <span style={{ color: 'var(--warning)', fontSize: '14px', marginLeft: '6px', fontWeight: 'bold' }}>B2B Portal</span>
           </span>
         </div>
-
+        
         <button className="mobile-menu-btn" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}><Menu size={24} /></button>
         <div className={"nav-links" + (isMobileMenuOpen ? " open" : "")} onClick={() => setIsMobileMenuOpen(false)}>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'dashboard' ? 'active' : ''}`}
             onClick={() => setActiveTab('dashboard')}
           >
             <TrendingUp size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Resumen de Ventas
           </button>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'contracts' ? 'active' : ''}`}
             onClick={() => setActiveTab('contracts')}
           >
             <FileText size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Contratos
           </button>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'clients' ? 'active' : ''}`}
             onClick={() => setActiveTab('clients')}
           >
             <Users size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Clientes
           </button>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'commercials' ? 'active' : ''}`}
             onClick={() => setActiveTab('commercials')}
           >
             <Briefcase size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Comerciales
           </button>
-          <button
+          <button 
             className={`nav-link ${activeTab === 'settings' ? 'active' : ''}`}
             onClick={() => setActiveTab('settings')}
           >
             <Settings size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
             Configuración
           </button>
-
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '12px', marginRight: '4px', borderLeft: '1px solid var(--border-color)', paddingLeft: '16px', height: '24px' }}>
             <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
               Hola, <strong style={{ color: 'var(--text-primary)' }}>{session?.user?.name}</strong>
@@ -519,14 +519,14 @@ export function CommercialDashboard({ session, handleLogout }) {
             }}>
               Ejecutivo de Ventas
             </span>
-            <button
-              className="btn btn-secondary"
+            <button 
+              className="btn btn-secondary" 
               onClick={handleLogout}
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                display: 'flex',
-                alignItems: 'center',
+              style={{ 
+                padding: '4px 10px', 
+                fontSize: '11px', 
+                display: 'flex', 
+                alignItems: 'center', 
                 gap: '4px',
                 marginLeft: '8px',
                 background: 'rgba(255,255,255,0.05)'
@@ -545,7 +545,7 @@ export function CommercialDashboard({ session, handleLogout }) {
         {activeTab === 'dashboard' && kpis && (
           <div className="fade-in">
             <h2 className="section-title">Pipeline y KPIs Comerciales</h2>
-
+            
             <div className="stats-grid">
               <div className="stat-card glass-panel">
                 <div className="stat-header">
@@ -615,29 +615,29 @@ export function CommercialDashboard({ session, handleLogout }) {
 
         {activeTab === 'contracts' && (
           <div className="fade-in">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 className="section-title" style={{ margin: 0 }}>Gestión de Contratos</h2>
-
+              
               <div style={{ display: 'flex', gap: '10px' }}>
-                <input
-                  type="file"
-                  id="contract-upload-input"
-                  accept="application/pdf"
+                <input 
+                  type="file" 
+                  id="contract-upload-input" 
+                  accept="application/pdf" 
                   multiple
                   style={{ display: 'none' }}
                   onChange={handleFileUpload}
                 />
-                <input
-                  type="file"
-                  id="contract-folder-upload-input"
-                  accept="application/pdf"
+                <input 
+                  type="file" 
+                  id="contract-folder-upload-input" 
+                  accept="application/pdf" 
                   webkitdirectory="true"
                   multiple
                   style={{ display: 'none' }}
                   onChange={handleFileUpload}
                 />
-                <button
-                  className="btn btn-icon"
+                <button 
+                  className="btn btn-icon" 
                   style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
                   onClick={() => document.getElementById('contract-folder-upload-input').click()}
                   disabled={uploading}
@@ -645,8 +645,8 @@ export function CommercialDashboard({ session, handleLogout }) {
                 >
                   <Folder size={16} /> Carpeta
                 </button>
-                <button
-                  className="btn btn-primary"
+                <button 
+                  className="btn btn-primary" 
                   style={{ background: 'var(--warning)' }}
                   onClick={() => document.getElementById('contract-upload-input').click()}
                   disabled={uploading}
@@ -655,20 +655,20 @@ export function CommercialDashboard({ session, handleLogout }) {
                 </button>
               </div>
             </div>
-
+            
             {/* Action Bar & Filters */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
               <div style={{ display: 'flex', gap: '12px', flex: 1 }}>
-                <input
-                  type="text"
-                  placeholder="Buscar por título..."
-                  className="input-field"
+                <input 
+                  type="text" 
+                  placeholder="Buscar por título..." 
+                  className="input-field" 
                   style={{ maxWidth: '250px' }}
                   value={filterSearch}
                   onChange={(e) => setFilterSearch(e.target.value)}
                 />
-                <select
-                  className="input-field"
+                <select 
+                  className="input-field" 
                   style={{ maxWidth: '200px' }}
                   value={filterClient}
                   onChange={(e) => setFilterClient(e.target.value)}
@@ -679,8 +679,8 @@ export function CommercialDashboard({ session, handleLogout }) {
                     <option key={cl.id} value={cl.id}>{cl.empresa}</option>
                   ))}
                 </select>
-                <select
-                  className="input-field"
+                <select 
+                  className="input-field" 
                   style={{ maxWidth: '180px' }}
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
@@ -695,7 +695,7 @@ export function CommercialDashboard({ session, handleLogout }) {
                 <span style={{ fontWeight: 'bold', color: selectedContracts.length > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>{selectedContracts.length} seleccionados</span>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button className="btn btn-primary" style={{ background: 'var(--warning)', color: '#000', opacity: selectedContracts.length === 0 ? 0.5 : 1 }} onClick={handleSendBulk} disabled={isSendingBulk}>
-                    {isSendingBulk ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
+                    {isSendingBulk ? <Loader2 size={16} className="spin" /> : <Send size={16} />} 
                     {isSendingBulk ? 'Enviando...' : 'Envío Masivo'}
                   </button>
                   <button className="btn btn-primary" style={{ background: 'var(--danger)', opacity: selectedContracts.length === 0 ? 0.5 : 1 }} onClick={handleBulkDelete} disabled={selectedContracts.length === 0}>
@@ -710,8 +710,8 @@ export function CommercialDashboard({ session, handleLogout }) {
                 <thead>
                   <tr>
                     <th style={{ width: '40px', textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
+                      <input 
+                        type="checkbox" 
                         checked={isAllVisibleSelected}
                         onChange={() => {
                           if (isAllVisibleSelected) {
@@ -725,7 +725,7 @@ export function CommercialDashboard({ session, handleLogout }) {
                       />
                     </th>
                     {columns.map(col => (
-                      <th
+                      <th 
                         key={col.id}
                         draggable
                         onDragStart={(e) => handleColDragStart(e, col.id)}
@@ -754,8 +754,8 @@ export function CommercialDashboard({ session, handleLogout }) {
                     return (
                       <tr key={c.id} style={{ backgroundColor: selectedContracts.includes(c.id) ? 'rgba(234, 179, 8, 0.15)' : (c.status === 'Firmado' ? 'rgba(76, 175, 80, 0.05)' : 'rgba(255, 193, 7, 0.05)') }}>
                         <td style={{ textAlign: 'center' }}>
-                          <input
-                            type="checkbox"
+                          <input 
+                            type="checkbox" 
                             checked={selectedContracts.includes(c.id)}
                             onChange={() => {
                               if (selectedContracts.includes(c.id)) {
@@ -773,12 +773,12 @@ export function CommercialDashboard({ session, handleLogout }) {
                             case 'clientName': content = client ? client.empresa : 'Sin Asignar'; break;
                             case 'status': content = <span className={`status-badge ${c.status === 'Firmado' ? 'success' : 'pending'}`}>{c.status}</span>; break;
                             case 'uploadedAt': content = c.uploadedAt ? new Date(c.uploadedAt).toLocaleDateString() : 'Sin fecha'; break;
-                            case 'fechaFirmaDocumento':
-                              content = c.status === 'Firmado' && c.metadata?.fechaFirmaDocumento
-                                ? new Date(c.metadata.fechaFirmaDocumento).toLocaleDateString()
-                                : <span style={{ color: 'var(--text-secondary)' }}>A la espera de firma</span>;
+                            case 'fechaFirmaDocumento': 
+                              content = c.status === 'Firmado' && c.metadata?.fechaFirmaDocumento 
+                                ? new Date(c.metadata.fechaFirmaDocumento).toLocaleDateString() 
+                                : <span style={{ color: 'var(--text-secondary)' }}>A la espera de firma</span>; 
                               break;
-                            case 'vencimiento':
+                            case 'vencimiento': 
                               if (c.status === 'Firmado' && c.metadata?.vencimiento) {
                                 content = <span style={{ color: 'var(--warning)', fontWeight: '500' }}>{new Date(c.metadata.vencimiento).toLocaleDateString()}</span>;
                               } else if (c.status !== 'Firmado') {
@@ -802,9 +802,9 @@ export function CommercialDashboard({ session, handleLogout }) {
                         })}
                         <td style={{ display: 'flex', gap: '8px' }}>
                           {c.status === 'Firmado' && (
-                            <a
-                              href={`${API_BASE}/api/contracts/pdf/${c.id}`}
-                              target="_blank"
+                            <a 
+                              href={`${API_BASE}/api/contracts/pdf/${c.id}`} 
+                              target="_blank" 
                               rel="noreferrer"
                               className="btn btn-icon"
                               title="Descargar PDF Firmado"
@@ -813,18 +813,18 @@ export function CommercialDashboard({ session, handleLogout }) {
                               <Download size={16} />
                             </a>
                           )}
-                          <button
-                            className="btn btn-icon"
-                            title="Reasignar Cliente"
+                          <button 
+                            className="btn btn-icon" 
+                            title="Reasignar Cliente" 
                             style={{ color: 'var(--secondary)' }}
                             onClick={() => setReassignContractId(c.id)}
                           >
                             <Edit size={16} />
                           </button>
                           {c.status === 'Pendiente' && (
-                            <button
-                              className="btn btn-icon"
-                              title="Editar Metadatos de IA"
+                            <button 
+                              className="btn btn-icon" 
+                              title="Editar Metadatos de IA" 
                               style={{ color: 'var(--primary)' }}
                               onClick={() => {
                                 setEditMetadataData({
@@ -839,18 +839,18 @@ export function CommercialDashboard({ session, handleLogout }) {
                               <Edit size={16} />
                             </button>
                           )}
-                          <button
-                            className="btn btn-icon"
-                            title="Enviar por Correo"
+                          <button 
+                            className="btn btn-icon" 
+                            title="Enviar por Correo" 
                             style={{ color: 'var(--warning)' }}
                             onClick={() => handleSendIndividual(c.id)}
                             disabled={c.status === 'Firmado'}
                           >
                             <Send size={16} />
                           </button>
-                          <button
-                            className="btn btn-icon"
-                            title="Copiar Link Cliente"
+                          <button 
+                            className="btn btn-icon" 
+                            title="Copiar Link Cliente" 
                             onClick={() => {
                               const link = `${window.location.origin}/#b2b-portal?token=${c.token}`;
                               navigator.clipboard.writeText(link);
@@ -859,9 +859,9 @@ export function CommercialDashboard({ session, handleLogout }) {
                           >
                             <Link size={16} />
                           </button>
-                          <button
-                            className="btn btn-icon"
-                            title="Eliminar Contrato"
+                          <button 
+                            className="btn btn-icon" 
+                            title="Eliminar Contrato" 
                             style={{ color: 'var(--danger)' }}
                             onClick={async () => {
                               if (!window.confirm("¿Seguro que deseas eliminar este contrato individualmente?")) return;
@@ -897,15 +897,15 @@ export function CommercialDashboard({ session, handleLogout }) {
         {activeTab === 'clients' && (
           <div className="fade-in">
             <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', borderBottom: '1px solid var(--border)' }}>
-              <button
-                className={`btn ${clientsMode === 'repo' ? 'btn-primary' : 'btn-icon'}`}
+              <button 
+                className={`btn ${clientsMode === 'repo' ? 'btn-primary' : 'btn-icon'}`} 
                 onClick={() => { setClientsMode('repo'); setSelectedClientFolder(null); }}
                 style={{ borderRadius: '4px 4px 0 0', padding: '10px 20px', borderBottom: clientsMode === 'repo' ? 'none' : '' }}
               >
                 <Folder size={16} /> Repositorio
               </button>
-              <button
-                className={`btn ${clientsMode === 'abm' ? 'btn-primary' : 'btn-icon'}`}
+              <button 
+                className={`btn ${clientsMode === 'abm' ? 'btn-primary' : 'btn-icon'}`} 
                 onClick={() => setClientsMode('abm')}
                 style={{ borderRadius: '4px 4px 0 0', padding: '10px 20px', borderBottom: clientsMode === 'abm' ? 'none' : '' }}
               >
@@ -919,16 +919,16 @@ export function CommercialDashboard({ session, handleLogout }) {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' }}>
                     {clients.map(client => {
                       const clientContracts = contracts.filter(c => c.clientId === client.id);
-
+                      
                       const vigentes = clientContracts.filter(c => c.status === 'Firmado' && (!c.metadata?.vencimiento || new Date(c.metadata.vencimiento) >= new Date())).length;
                       const vencidos = clientContracts.filter(c => c.status === 'Firmado' && c.metadata?.vencimiento && new Date(c.metadata.vencimiento) < new Date()).length;
                       const pendientes = clientContracts.filter(c => c.status !== 'Firmado').length;
                       const firmados = clientContracts.filter(c => c.status === 'Firmado').length;
 
                       return (
-                        <div
-                          key={client.id}
-                          className="glass-panel"
+                        <div 
+                          key={client.id} 
+                          className="glass-panel" 
                           style={{ padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '15px', transition: 'all 0.2s' }}
                           onClick={() => setSelectedClientFolder(client)}
                           onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
@@ -959,11 +959,11 @@ export function CommercialDashboard({ session, handleLogout }) {
                       <ArrowLeft size={20} />
                     </button>
                     <h2 className="section-title" style={{ margin: 0 }}>
-                      <Folder size={24} style={{ display: 'inline', marginRight: '10px', verticalAlign: 'middle', color: 'var(--secondary)' }} />
+                      <Folder size={24} style={{ display: 'inline', marginRight: '10px', verticalAlign: 'middle', color: 'var(--secondary)' }}/> 
                       {selectedClientFolder.empresa}
                     </h2>
                   </div>
-
+                  
                   <div className="glass-panel" style={{ overflow: 'hidden' }}>
                     <table className="data-table">
                       <thead>
@@ -985,9 +985,9 @@ export function CommercialDashboard({ session, handleLogout }) {
                             </td>
                             <td>{new Date(c.uploadedAt).toLocaleDateString()}</td>
                             <td>
-                              <a
-                                href={`${API_BASE}/api/contracts/pdf/${c.id}`}
-                                target="_blank"
+                              <a 
+                                href={`${API_BASE}/api/contracts/pdf/${c.id}`} 
+                                target="_blank" 
                                 rel="noreferrer"
                                 className="btn btn-primary"
                                 style={{ padding: '6px 12px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
@@ -1007,8 +1007,8 @@ export function CommercialDashboard({ session, handleLogout }) {
             {clientsMode === 'abm' && (
               <div className="fade-in">
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
-                  <button
-                    className="btn btn-primary"
+                  <button 
+                    className="btn btn-primary" 
                     onClick={() => { setEditClientData({ id: null, empresa: '', name: '', email: '' }); setShowClientModal(true); }}
                   >
                     <Plus size={16} /> Nuevo Cliente
@@ -1057,7 +1057,7 @@ export function CommercialDashboard({ session, handleLogout }) {
                 <Plus size={16} /> Nuevo Comercial
               </button>
             </div>
-
+            
             <div className="table-responsive">
               <table className="data-table">
                 <thead>
@@ -1093,11 +1093,11 @@ export function CommercialDashboard({ session, handleLogout }) {
         {activeTab === 'settings' && (
           <div className="fade-in glass-panel" style={{ padding: '30px', maxWidth: '800px', margin: '0 auto' }}>
             <h2 className="section-title">Configuración B2B</h2>
-
+            
             <div style={{ marginBottom: '30px', borderBottom: '1px solid var(--border)', paddingBottom: '20px' }}>
               <h3 style={{ marginTop: 0 }}>Configuración de IA (Extracción de Contratos)</h3>
               <p style={{ color: 'var(--text-secondary)' }}>Selecciona el proveedor de Inteligencia Artificial y configura las API Keys correspondientes.</p>
-
+              
               <div className="form-group" style={{ marginTop: '15px' }}>
                 <label>Proveedor de IA Activo</label>
                 <select className="form-control" value={aiProvider} onChange={e => setAiProvider(e.target.value)}>
@@ -1126,10 +1126,10 @@ export function CommercialDashboard({ session, handleLogout }) {
               <p style={{ color: 'var(--text-secondary)' }}>Define el nivel de coincidencia requerido (umbral) para que la IA asocie automáticamente un contrato a un cliente existente basándose en el nombre de la empresa.</p>
               <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <label style={{ fontWeight: 'bold' }}>Umbral de Coincidencia: {fuzzyThreshold}%</label>
-                <input
-                  type="range"
-                  min="50" max="100"
-                  value={fuzzyThreshold}
+                <input 
+                  type="range" 
+                  min="50" max="100" 
+                  value={fuzzyThreshold} 
                   onChange={(e) => setFuzzyThreshold(e.target.value)}
                   style={{ width: '100%' }}
                 />
@@ -1153,31 +1153,31 @@ export function CommercialDashboard({ session, handleLogout }) {
             <form onSubmit={handleSaveClient}>
               <div className="form-group">
                 <label>Razón Social / Empresa</label>
-                <input
-                  type="text"
-                  value={editClientData.empresa}
-                  onChange={e => setEditClientData({ ...editClientData, empresa: e.target.value })}
-                  required
+                <input 
+                  type="text" 
+                  value={editClientData.empresa} 
+                  onChange={e => setEditClientData({...editClientData, empresa: e.target.value})}
+                  required 
                   className="form-control"
                 />
               </div>
               <div className="form-group">
                 <label>Nombre del Contacto</label>
-                <input
-                  type="text"
-                  value={editClientData.name}
-                  onChange={e => setEditClientData({ ...editClientData, name: e.target.value })}
-                  required
+                <input 
+                  type="text" 
+                  value={editClientData.name} 
+                  onChange={e => setEditClientData({...editClientData, name: e.target.value})}
+                  required 
                   className="form-control"
                 />
               </div>
               <div className="form-group">
                 <label>Correo Electrónico</label>
-                <input
-                  type="email"
-                  value={editClientData.email}
-                  onChange={e => setEditClientData({ ...editClientData, email: e.target.value })}
-                  required
+                <input 
+                  type="email" 
+                  value={editClientData.email} 
+                  onChange={e => setEditClientData({...editClientData, email: e.target.value})}
+                  required 
                   className="form-control"
                 />
               </div>
@@ -1210,9 +1210,9 @@ export function CommercialDashboard({ session, handleLogout }) {
             Por favor, no cierres esta ventana. Documento {uploadProgress.current} de {uploadProgress.total}
           </p>
           <div style={{ width: '300px', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
-            <div style={{
-              height: '100%',
-              background: 'var(--warning)',
+            <div style={{ 
+              height: '100%', 
+              background: 'var(--warning)', 
               width: `${uploadProgress.total > 0 ? (uploadProgress.current / uploadProgress.total) * 100 : 0}%`,
               transition: 'width 0.3s ease'
             }} />
@@ -1237,9 +1237,9 @@ export function CommercialDashboard({ session, handleLogout }) {
               <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '15px' }}>
                 Selecciona la empresa correcta a la que pertenece este contrato:
               </p>
-              <select
+              <select 
                 id="reassign-select"
-                className="input-field"
+                className="input-field" 
                 style={{ width: '100%', marginBottom: '15px', padding: '10px' }}
                 defaultValue={contracts.find(c => c.id === reassignContractId)?.clientId || ''}
               >
@@ -1248,7 +1248,7 @@ export function CommercialDashboard({ session, handleLogout }) {
                   <option key={cl.id} value={cl.id}>{cl.empresa}</option>
                 ))}
               </select>
-
+              
               <div style={{ padding: '10px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', marginBottom: '20px', borderLeft: '3px solid var(--secondary)' }}>
                 <p style={{ fontSize: '12px', margin: 0, color: 'var(--text-secondary)' }}>
                   <strong>¿No encuentras al cliente?</strong> Recuerda que el ABM completo está disponible en la pestaña superior <strong>"Base de Datos"</strong>, donde puedes dar de alta nuevas empresas antes de reasignarlas.
@@ -1257,8 +1257,8 @@ export function CommercialDashboard({ session, handleLogout }) {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button className="btn btn-secondary" onClick={() => setReassignContractId(null)}>Cancelar</button>
-                <button
-                  className="btn btn-primary"
+                <button 
+                  className="btn btn-primary" 
                   onClick={async () => {
                     const selectEl = document.getElementById('reassign-select');
                     const newClientId = selectEl.value;
@@ -1297,31 +1297,31 @@ export function CommercialDashboard({ session, handleLogout }) {
             <form onSubmit={handleSaveCommercial}>
               <div className="form-group">
                 <label>Nombre</label>
-                <input
-                  type="text"
-                  value={editCommercialData.name}
-                  onChange={e => setEditCommercialData({ ...editCommercialData, name: e.target.value })}
-                  required
+                <input 
+                  type="text" 
+                  value={editCommercialData.name} 
+                  onChange={e => setEditCommercialData({...editCommercialData, name: e.target.value})}
+                  required 
                   className="form-control"
                 />
               </div>
               <div className="form-group">
                 <label>Email (Usuario)</label>
-                <input
-                  type="email"
-                  value={editCommercialData.email}
-                  onChange={e => setEditCommercialData({ ...editCommercialData, email: e.target.value })}
-                  required
+                <input 
+                  type="email" 
+                  value={editCommercialData.email} 
+                  onChange={e => setEditCommercialData({...editCommercialData, email: e.target.value})}
+                  required 
                   className="form-control"
                 />
               </div>
               <div className="form-group">
                 <label>{editCommercialData.id ? 'Nueva Contraseña (opcional)' : 'Contraseña'}</label>
-                <input
-                  type="password"
-                  value={editCommercialData.password}
-                  onChange={e => setEditCommercialData({ ...editCommercialData, password: e.target.value })}
-                  required={!editCommercialData.id}
+                <input 
+                  type="password" 
+                  value={editCommercialData.password} 
+                  onChange={e => setEditCommercialData({...editCommercialData, password: e.target.value})}
+                  required={!editCommercialData.id} 
                   className="form-control"
                 />
               </div>
@@ -1345,28 +1345,28 @@ export function CommercialDashboard({ session, handleLogout }) {
             <form onSubmit={handleSaveMetadata}>
               <div className="form-group">
                 <label>Empresa Detectada</label>
-                <input
-                  type="text"
-                  value={editMetadataData.empresa}
-                  onChange={e => setEditMetadataData({ ...editMetadataData, empresa: e.target.value })}
+                <input 
+                  type="text" 
+                  value={editMetadataData.empresa} 
+                  onChange={e => setEditMetadataData({...editMetadataData, empresa: e.target.value})}
                   className="form-control"
                 />
               </div>
               <div className="form-group">
                 <label>Monto del Contrato</label>
-                <input
-                  type="number"
-                  value={editMetadataData.monto}
-                  onChange={e => setEditMetadataData({ ...editMetadataData, monto: e.target.value })}
+                <input 
+                  type="number" 
+                  value={editMetadataData.monto} 
+                  onChange={e => setEditMetadataData({...editMetadataData, monto: e.target.value})}
                   className="form-control"
                 />
               </div>
               <div className="form-group">
                 <label>Duración Estipulada (Meses)</label>
-                <input
-                  type="number"
-                  value={editMetadataData.duracionMeses}
-                  onChange={e => setEditMetadataData({ ...editMetadataData, duracionMeses: e.target.value })}
+                <input 
+                  type="number" 
+                  value={editMetadataData.duracionMeses} 
+                  onChange={e => setEditMetadataData({...editMetadataData, duracionMeses: e.target.value})}
                   className="form-control"
                   placeholder="Ej: 12"
                 />

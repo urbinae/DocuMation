@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  FileText, Users, Settings, Upload, CheckCircle,
-  Clock, Mail, Download, Trash2, Send, Plus,
+import { 
+  FileText, Users, Settings, Upload, CheckCircle, 
+  Clock, Mail, Download, Trash2, Send, Plus, 
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5173' : '';
+const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 import ThemeToggle from '../shared/ThemeToggle';
 import FinancialAnalyticsTab from './FinancialAnalyticsTab';
@@ -41,10 +41,10 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
 
   if (activeSignPayslip) {
     return (
-      <EmployeePortal
-        payslipToSign={activeSignPayslip}
-        handleLogout={handleFinishSigning}
-        isDirectSign={false}
+      <EmployeePortal 
+        payslipToSign={activeSignPayslip} 
+        handleLogout={handleFinishSigning} 
+        isDirectSign={false} 
       />
     );
   }
@@ -73,14 +73,14 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
             {employee.fechaIngreso && ` | Ingreso: ${new Date(employee.fechaIngreso + 'T00:00:00').toLocaleDateString('es-AR')}`}
           </span>
           {employee.role === 'rrhh' && (
-            <button
-              className="btn btn-secondary"
+            <button 
+              className="btn btn-secondary" 
               onClick={switchToHrView}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                display: 'flex',
-                alignItems: 'center',
+              style={{ 
+                padding: '6px 12px', 
+                fontSize: '12px', 
+                display: 'flex', 
+                alignItems: 'center', 
                 gap: '6px',
                 border: '1px solid rgba(255, 112, 67, 0.3)',
                 color: '#ff7043'
@@ -100,11 +100,11 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
       </nav>
 
       <main className="main-content" style={{ maxWidth: '1000px' }}>
-
+        
         {/* Selector de Pestañas del Empleado */}
         {!loading && totalPayslips > 0 && (
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-            <button
+            <button 
               className={`btn ${employeeTab === 'recibos' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setEmployeeTab('recibos')}
               style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}
@@ -112,7 +112,7 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
               <FileText size={16} />
               Mis Recibos
             </button>
-            <button
+            <button 
               className={`btn ${employeeTab === 'analisis' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setEmployeeTab('analisis')}
               style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}
@@ -248,7 +248,7 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
                             </td>
                             <td>
                               {!isSigned && hasDuplicado ? (
-                                <button
+                                <button 
                                   className="btn btn-primary"
                                   style={{ padding: '8px 16px', fontSize: '13px' }}
                                   onClick={() => setActiveSignPayslip(ps)}
