@@ -414,8 +414,18 @@ async function renderReceiptSectionToPdfBuffer(worksheet, startRow, endRow, titl
       const cellW = colWidths[i] || 70;
 
       if (cellText) {
-        // Truncar texto si sobrepasa el ancho de la celda
-        const maxChars = Math.floor(cellW / 4.5);
+        // Calcular el ancho disponible sumando las celdas vacías consecutivas a la derecha
+        let availableW = cellW;
+        for (let j = i + 1; j < rowData.cells.length; j++) {
+          if (!rowData.cells[j]) {
+            availableW += (colWidths[j] || 70);
+          } else {
+            break;
+          }
+        }
+
+        // Truncar texto solo si sobrepasa el ancho acumulado disponible
+        const maxChars = Math.floor(availableW / 4.2);
         const truncated = cellText.length > maxChars ? cellText.substring(0, maxChars - 1) + '…' : cellText;
 
         page.drawText(truncated, {
