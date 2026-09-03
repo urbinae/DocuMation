@@ -318,11 +318,11 @@ describe('Unit Tests – emailService.js', () => {
         to: EMPLOYEE_TO, employeeName: EMPLOYEE, month: MONTH, token: TOKEN
       });
 
-      const expectedUrl = `http://localhost:9999/api/sign/${TOKEN}`;
+      const expectedUrl = `/#firmar?token=${TOKEN}`;
       assert.ok(capturedHtml.includes(expectedUrl),
-        `El HTML debe contener la URL de firma correcta.\nEsperada: ${expectedUrl}`);
+        `El HTML debe contener la URL de firma correcta del portal.\nEsperada con: ${expectedUrl}`);
       assert.ok(capturedText.includes(expectedUrl),
-        `El texto plano debe contener la URL de firma correcta.\nEsperada: ${expectedUrl}`);
+        `El texto plano debe contener la URL de firma correcta del portal.\nEsperada con: ${expectedUrl}`);
     });
 
     test('El body HTML contiene el nombre del empleado', async () => {
