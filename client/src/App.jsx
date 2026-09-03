@@ -65,9 +65,11 @@ export default function App() {
 
   // Guardar vista actual
   useEffect(() => {
-    localStorage.setItem('view', view);
+    if (view !== 'direct-sign') {
+      localStorage.setItem('view', view);
+    }
     
-    // Redirecciones de seguridad si no hay sesión
+    // Redirecciones de seguridad si no hay sesión y no estamos en firma directa
     if (view === 'employee' && !employeeSession) setView('hub');
     if (view === 'hr' && !hrSession) setView('hub');
   }, [view, employeeSession, hrSession]);
@@ -201,20 +203,24 @@ export default function App() {
     }
   };
 
-  // Cargar token de la URL si existe (ej: ?token=XYZ o #?token=XYZ)
+  // Cargar token de la URL si existe (ej: ?token=XYZ, /#firmar?token=XYZ, etc.)
   useEffect(() => {
     const handleUrlToken = () => {
       const searchParams = new URLSearchParams(window.location.search);
       let t = searchParams.get('token');
-      
+
       if (!t && window.location.hash) {
-        const hashQuery = window.location.hash.split('?')[1];
-        if (hashQuery) {
-          const hashParams = new URLSearchParams(hashQuery);
-          t = hashParams.get('token');
+        if (window.location.hash.includes('token=')) {
+          t = window.location.hash.split('token=')[1]?.split('&')[0];
+        } else if (window.location.hash.includes('?')) {
+          const hashQuery = window.location.hash.split('?')[1];
+          if (hashQuery) {
+            const hashParams = new URLSearchParams(hashQuery);
+            t = hashParams.get('token');
+          }
         }
       }
-      
+
       if (t) {
         setToken(t);
         setView('direct-sign');
@@ -223,7 +229,11 @@ export default function App() {
 
     handleUrlToken();
     window.addEventListener('hashchange', handleUrlToken);
-    return () => window.removeEventListener('hashchange', handleUrlToken);
+    window.addEventListener('popstate', handleUrlToken);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlToken);
+      window.removeEventListener('popstate', handleUrlToken);
+    };
   }, []);
 
   const handleLogout = () => {
