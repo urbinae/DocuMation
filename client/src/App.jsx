@@ -67,6 +67,7 @@ export default function App() {
     const saved = localStorage.getItem('view');
     return saved || 'hub';
   });
+  const [hrTab, setHrTab] = useState('dashboard');
 
   const [employeeSession, setEmployeeSession] = useState(() => {
     const saved = localStorage.getItem('employeeSession');
