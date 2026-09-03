@@ -158,115 +158,177 @@ function extractFinancialData(text) {
 }
 
 /**
- * Convierte una solapa de ExcelJS a un Buffer de PDF A4 en memoria usando pdf-lib.
- * Genera ambas mitades (Duplicado arriba / Original abajo) para posibilitar el split geométrico.
+ * Extrae los datos estructurados de un rango de celdas de una solapa de ExcelJS.
  * @param {object} worksheet ExcelJS Worksheet
- * @returns {Promise<Buffer>}
+ * @param {number} startRow
+ * @param {number} endRow
+ * @returns {object} Datos estructurados de la sección del recibo
  */
-async function excelToPdfBuffer(worksheet) {
-  const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([595.28, 841.89]); // Tamaño A4 estándar en puntos (72 DPI)
-  const font = await pdfDoc.embedStandardFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedStandardFont(StandardFonts.HelveticaBold);
-
-  const { width, height } = page.getSize();
-  const halfHeight = height / 2;
-
-  // Dibujar plantilla de visualización para ambas secciones
-  const renderSection = (yOffset, sectionTitle) => {
-    // Encabezado de Sección
-    page.drawText(`RECIBO DE SUELDO - ${sectionTitle}`, {
-      x: 40,
-      y: yOffset - 30,
-      size: 12,
-      font: fontBold,
-      color: rgb(0.1, 0.3, 0.6)
-    });
-
-    page.drawLine({
-      start: { x: 40, y: yOffset - 35 },
-      end: { x: width - 40, y: yOffset - 35 },
-      thickness: 1,
-      color: rgb(0.7, 0.7, 0.7)
-    });
+function extractReceiptDataFromRange(worksheet, startRow, endRow) {
+  const getCellValue = (r, c) => {
+    const row = worksheet.getRow(r);
+    const cell = row.getCell(c);
+    if (!cell || cell.value == null) return '';
+    if (cell.text != null && cell.text !== '') return String(cell.text).trim();
+    if (typeof cell.value === 'object') {
+      if (cell.value.result != null) return String(cell.value.result).trim();
+      if (Array.isArray(cell.value.richText)) return cell.value.richText.map(rt => rt.text || '').join('').trim();
+      if (cell.value.text != null) return String(cell.value.text).trim();
+      return String(cell.value).trim();
+    }
+    return String(cell.value).trim();
   };
 
-  // Sección Duplicado (Mitad Superior)
-  renderSection(height, 'DUPLICADO (FIRMA EMPLEADO)');
-  // Sección Original (Mitad Inferior)
-  renderSection(halfHeight, 'ORIGINAL (FIRMA EMPLEADOR)');
-
-  // Extraer celdas y distribuirlas en las dos mitades
-  let rowCount = 0;
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowCount > 25) return; // Limitar filas por solapa A4
-
-    const rowYTop = height - 50 - (rowNumber * 14);
-    const rowYBottom = halfHeight - 50 - (rowNumber * 14);
-
-    let rowText = '';
-    row.eachCell((cell) => {
-      let val = '';
-      if (cell.value != null) {
-        if (cell.text != null && cell.text !== '') {
-          val = String(cell.text);
-        } else if (typeof cell.value === 'object') {
-          if (cell.value.result != null) {
-            val = String(cell.value.result);
-          } else if (Array.isArray(cell.value.richText)) {
-            val = cell.value.richText.map(rt => rt.text || '').join('');
-          } else if (cell.value.text != null) {
-            val = String(cell.value.text);
-          } else {
-            val = String(cell.value);
-          }
-        } else {
-          val = String(cell.value);
-        }
-      }
-      if (val.trim()) {
-        rowText += val.trim() + '  ';
-      }
-    });
-
-    if (rowText.trim()) {
-      const isHeader = rowNumber <= 3;
-      const currentFont = isHeader ? fontBold : font;
-      const fontSize = 8;
-
-      if (rowYTop > halfHeight + 15) {
-        page.drawText(rowText.substring(0, 110), {
-          x: 40,
-          y: rowYTop,
-          size: fontSize,
-          font: currentFont,
-          color: rgb(0.15, 0.15, 0.15)
-        });
-      }
-
-      if (rowYBottom > 15) {
-        page.drawText(rowText.substring(0, 110), {
-          x: 40,
-          y: rowYBottom,
-          size: fontSize,
-          font: currentFont,
-          color: rgb(0.15, 0.15, 0.15)
-        });
-      }
+  const rows = [];
+  for (let r = startRow; r <= endRow; r++) {
+    const rowValues = [];
+    let hasValue = false;
+    for (let c = 2; c <= 7; c++) { // Columnas B a G (2 a 7)
+      const val = getCellValue(r, c);
+      if (val) hasValue = true;
+      rowValues.push(val);
     }
-    rowCount++;
+    if (hasValue) {
+      rows.push({ rowNumber: r, cells: rowValues });
+    }
+  }
+
+  return { rows };
+}
+
+/**
+ * Renderiza una sección de recibo (rango de celdas) en una página única de PDF usando pdf-lib.
+ * @param {object} worksheet ExcelJS Worksheet
+ * @param {number} startRow
+ * @param {number} endRow
+ * @param {string} title Título del recibo ('DUPLICADO (FIRMA EMPLEADO)' u 'ORIGINAL')
+ * @returns {Promise<Buffer>} Buffer del PDF de 1 página
+ */
+async function renderReceiptSectionToPdfBuffer(worksheet, startRow, endRow, title) {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595.28, 841.89]); // Tamaño A4 estándar
+  const font = await pdfDoc.embedStandardFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedStandardFont(StandardFonts.HelveticaBold);
+  const { width, height } = page.getSize();
+
+  // Margen superior y coordenadas
+  let currentY = height - 40;
+
+  // Header principal del Recibo
+  page.drawRectangle({
+    x: 35,
+    y: currentY - 25,
+    width: width - 70,
+    height: 30,
+    color: rgb(0.92, 0.94, 0.98),
+    borderColor: rgb(0.2, 0.3, 0.6),
+    borderWidth: 1
   });
 
-  // Línea divisoria central
+  page.drawText(`RECIBO DE HABERES - ${title}`, {
+    x: 45,
+    y: currentY - 17,
+    size: 11,
+    font: fontBold,
+    color: rgb(0.1, 0.2, 0.5)
+  });
+
+  page.drawText(`Hoja: ${worksheet.name}`, {
+    x: width - 180,
+    y: currentY - 17,
+    size: 9,
+    font: fontBold,
+    color: rgb(0.3, 0.3, 0.3)
+  });
+
+  currentY -= 40;
+
+  // Dibujar las filas extraídas del rango especificado (B:G)
+  const rangeData = extractReceiptDataFromRange(worksheet, startRow, endRow);
+
+  // Anchos aproximados para las 6 columnas B, C, D, E, F, G (Total ~525 pt)
+  const colWidths = [120, 180, 55, 55, 55, 60];
+  const startX = 35;
+
+  let lineCount = 0;
+  const maxLinesPerPage = 62;
+
+  for (const rowData of rangeData.rows) {
+    if (lineCount >= maxLinesPerPage) break;
+
+    const rowY = currentY - (lineCount * 11.5);
+    if (rowY < 90) break; // Garantizar espacio inferior para la zona de firma (mínimo 90pt libres)
+
+    let currentX = startX;
+    const isHeaderRow = lineCount < 4 || rowData.cells.some(c => c.toUpperCase().includes('CONCEPTO') || c.toUpperCase().includes('HABERES') || c.toUpperCase().includes('TOTAL'));
+    const currentFont = isHeaderRow ? fontBold : font;
+    const fontSize = isHeaderRow ? 7.5 : 7;
+    const textColor = isHeaderRow ? rgb(0.1, 0.1, 0.4) : rgb(0.15, 0.15, 0.15);
+
+    for (let i = 0; i < rowData.cells.length; i++) {
+      const cellText = rowData.cells[i];
+      const cellW = colWidths[i] || 70;
+
+      if (cellText) {
+        // Truncar texto si sobrepasa el ancho de la celda
+        const maxChars = Math.floor(cellW / 4.5);
+        const truncated = cellText.length > maxChars ? cellText.substring(0, maxChars - 1) + '…' : cellText;
+
+        page.drawText(truncated, {
+          x: currentX + 2,
+          y: rowY,
+          size: fontSize,
+          font: currentFont,
+          color: textColor
+        });
+      }
+      currentX += cellW;
+    }
+
+    lineCount++;
+  }
+
+  // Zona Inferior reservada para Firma
+  const signatureY = 35;
   page.drawLine({
-    start: { x: 20, y: halfHeight },
-    end: { x: width - 20, y: halfHeight },
-    thickness: 1,
+    start: { x: 35, y: signatureY + 45 },
+    end: { x: width - 35, y: signatureY + 45 },
+    thickness: 0.5,
+    color: rgb(0.8, 0.8, 0.8)
+  });
+
+  page.drawRectangle({
+    x: 40,
+    y: signatureY,
+    width: 220,
+    height: 40,
+    borderColor: rgb(0.7, 0.7, 0.7),
+    borderWidth: 0.5
+  });
+
+  page.drawText('FIRMA CONFORME EMPLEADO', {
+    x: 50,
+    y: signatureY + 5,
+    size: 7,
+    font: fontBold,
     color: rgb(0.5, 0.5, 0.5)
   });
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
+}
+
+/**
+ * Convierte una solapa de ExcelJS a dos buffers PDF independientes (Duplicado y Original).
+ * - Duplicado: Rango B2:G77
+ * - Original: Rango B80:G153
+ * @param {object} worksheet ExcelJS Worksheet
+ * @returns {Promise<{ dupBuffer: Buffer, origBuffer: Buffer }>}
+ */
+async function excelToPdfBuffer(worksheet) {
+  const dupBuffer = await renderReceiptSectionToPdfBuffer(worksheet, 2, 77, 'DUPLICADO (FIRMA EMPLEADO)');
+  const origBuffer = await renderReceiptSectionToPdfBuffer(worksheet, 80, 153, 'ORIGINAL');
+  return { dupBuffer, origBuffer };
 }
 
 /**

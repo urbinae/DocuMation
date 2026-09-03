@@ -276,7 +276,7 @@ router.post('/upload', fileUploadMiddleware, async (req, res) => {
 
 /**
  * POST /api/payslips/upload-excel
- * Carga masiva de Excel (.xlsx) con procesamiento en memoria y split geométrico
+ * Carga masiva de Excel (.xlsx) con procesamiento nativo en memoria (pdf-lib & exceljs)
  */
 router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
   try {
@@ -292,24 +292,31 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
     let processedCount = 0;
     let skippedCount = 0;
     const errors = [];
-    const excludedSheets = ['RESUMEN', 'SICOSS', 'MODELO', 'CUSS', 'HOJA6', 'HOJA 6', 'PARAMETROS'];
+    const excludedSheets = ['MODELO', 'SICOSS', 'RESUMEN', 'CUSS', 'HOJA6', 'HOJA 6', 'SAC_VAC', 'PARAMETROS'];
 
     const { data: allEmployees } = await supabase
       .from('employees')
       .select('id, cuil, name');
 
     for (const worksheet of workbook.worksheets) {
-      const sheetNameUpper = worksheet.name.toUpperCase().trim();
-      if (worksheet.state === 'hidden' || excludedSheets.includes(sheetNameUpper)) {
+      const sheetNameTrimmed = worksheet.name.trim();
+      const sheetNameUpper = sheetNameTrimmed.toUpperCase();
+
+      // 1. Filtrado de Hojas de Control y Números
+      if (
+        worksheet.state === 'hidden' ||
+        excludedSheets.includes(sheetNameUpper) ||
+        /^\d+$/.test(sheetNameTrimmed)
+      ) {
         continue;
       }
 
       totalSheets++;
 
-      // 1. Generación de PDF A4 en memoria a partir de la solapa de Excel
-      const sheetPdfBuffer = await pdfService.excelToPdfBuffer(worksheet);
+      // 2. Extracción y generación de Buffers PDF independientes (Duplicado B2:G77 y Original B80:G153)
+      const { dupBuffer, origBuffer } = await pdfService.excelToPdfBuffer(worksheet);
 
-      // 2. Extraer texto completo de las celdas de la solapa de Excel
+      // 3. Extraer texto completo de celdas para detección de CUIL y matcheo
       let worksheetText = '';
       worksheet.eachRow((row) => {
         row.eachCell((cell) => {
@@ -327,12 +334,11 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
         });
       });
 
-      let analysis = await pdfService.analyzeBuffer(sheetPdfBuffer, worksheet.name);
+      let analysis = await pdfService.analyzeBuffer(dupBuffer, worksheet.name);
 
-      // Recopilar todos los CUILs únicos encontrados (del PDF y del texto de Excel)
+      // Buscar CUILs en el texto
       const foundCuils = [];
       const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
-
       const fullTextToScan = `${analysis.text || ''} ${worksheetText}`;
       let match;
       while ((match = cuilRegex.exec(fullTextToScan)) !== null) {
@@ -342,11 +348,10 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
         }
       }
 
-      // 3. Matcheo con Empleado en Base de Datos
+      // Matcheo con Empleado en Base de Datos por CUIL o por Nombre de Hoja
       let employee = null;
       let matchedCuil = null;
 
-      // a) Primero buscar si alguno de los CUILs encontrados pertenece a un empleado
       for (const cuilCandidate of foundCuils) {
         const candidateFormatted = pdfService.formatCUIL(cuilCandidate);
         const emp = (allEmployees || []).find(e => {
@@ -361,9 +366,8 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
         }
       }
 
-      // b) Si no matcheó por CUIL (ej. los CUILs escaneados eran de la empresa o no estaban en BD), intentar por Nombre (Worksheet name)
       if (!employee) {
-        const sheetClean = worksheet.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const sheetClean = sheetNameTrimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         employee = (allEmployees || []).find(e => {
           const empNameClean = (e.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
           return sheetClean.includes(empNameClean) || empNameClean.includes(sheetClean);
@@ -375,14 +379,14 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
 
       if (!employee) {
         const reportedCuil = foundCuils.length > 0 ? foundCuils.join(', ') : 'no detectado';
-        errors.push({ sheet: worksheet.name, cuil: reportedCuil, error: `No se encontró un empleado registrado para la hoja '${worksheet.name}' (CUILs en hoja: ${reportedCuil})` });
+        errors.push({ sheet: worksheet.name, cuil: reportedCuil, error: `No se encontró un empleado registrado para la hoja '${worksheet.name}'` });
         continue;
       }
 
       analysis.cuil = matchedCuil || String(employee.cuil || '').replace(/\D/g, '');
       analysis.formattedCuil = pdfService.formatCUIL(analysis.cuil);
 
-      // 4. Verificación de existencia de recibo completo para el mes
+      // Verificación si ya existe el recibo completo para ese mes
       const { data: existingPayslip } = await supabase
         .from('payslips')
         .select('*')
@@ -395,16 +399,15 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
         continue;
       }
 
-      // 5. División Geométrica con pdf-lib (Mitad Superior: Duplicado / Mitad Inferior: Original)
-      const { origBuffer, dupBuffer } = await pdfService.splitPdfBuffer(sheetPdfBuffer);
+      // 4. Hashes y Rutas de Supabase Storage
       const origHash = pdfService.getBufferHash(origBuffer);
       const dupHash = pdfService.getBufferHash(dupBuffer);
 
-      // 6. Subida de Buffers a Supabase Storage
       const cleanSheetName = pdfService.sanitizeFileName(worksheet.name);
       const origStoragePath = `originals/${uuidv4()}_${cleanSheetName}_original.pdf`;
       const dupStoragePath = `duplicados/${uuidv4()}_${cleanSheetName}_duplicado.pdf`;
 
+      // 5. Persistencia en Supabase Storage directamente desde memoria
       const [origUpload, dupUpload] = await Promise.all([
         supabase.storage.from('payslips').upload(origStoragePath, origBuffer, { contentType: 'application/pdf', upsert: true }),
         supabase.storage.from('payslips').upload(dupStoragePath, dupBuffer, { contentType: 'application/pdf', upsert: true })
@@ -415,7 +418,7 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
         continue;
       }
 
-      // 7. Guardar/Actualizar en Base de Datos PostgreSQL
+      // 6. Guardar/Actualizar en Supabase PostgreSQL (tabla 'payslips')
       if (existingPayslip) {
         await supabase
           .from('payslips')
