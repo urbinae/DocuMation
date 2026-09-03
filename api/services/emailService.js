@@ -103,8 +103,8 @@ async function sendEmail({ to, subject, html, text }) {
  * @returns {Promise<Object>}
  */
 async function sendPayslipSignatureNotification({ to, employeeName, month, token }) {
-  const baseUrl = process.env.BASE_URL || BASE_URL;
-  const signUrl = `${baseUrl}/api/sign/${token}`;
+  const frontendUrl = process.env.FRONTEND_URL || process.env.APP_URL || (process.env.BASE_URL ? process.env.BASE_URL.replace(':5000', ':5173') : 'http://localhost:5173');
+  const signUrl = `${frontendUrl}/#firmar?token=${token}`;
   const subject = `[${COMPANY_NAME}] Recibo de Sueldo disponible para firma - ${month}`;
 
   const html = `
