@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  FileText, Users, Settings, Upload, CheckCircle, 
-  Clock, Mail, Download, Trash2, Send, Plus, 
+import {
+  FileText, Users, Settings, Upload, CheckCircle,
+  Clock, Mail, Download, Trash2, Send, Plus,
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
@@ -32,20 +32,49 @@ const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:50
 export default function App() {
   const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutos
 
+  const [token, setToken] = useState(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    let t = searchParams.get('token');
+    if (!t && window.location.hash) {
+      if (window.location.hash.includes('token=')) {
+        t = window.location.hash.split('token=')[1]?.split('&')[0];
+      } else if (window.location.hash.includes('?')) {
+        const hashQuery = window.location.hash.split('?')[1];
+        if (hashQuery) {
+          const hashParams = new URLSearchParams(hashQuery);
+          t = hashParams.get('token');
+        }
+      }
+    }
+
+    if (t) {
+      sessionStorage.setItem('signingToken', t);
+      return t;
+    }
+
+    return sessionStorage.getItem('signingToken') || null;
+  });
+
   const [view, setView] = useState(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const hasTokenInUrl = searchParams.has('token') || window.location.hash.includes('token=');
+    const storedToken = sessionStorage.getItem('signingToken');
+    
+    if (hasTokenInUrl || storedToken) {
+      return 'direct-sign';
+    }
+    
     const saved = localStorage.getItem('view');
     return saved || 'hub';
   });
-  const [hrTab, setHrTab] = useState('dashboard');
-  const [token, setToken] = useState(null);
-  
+
   const [employeeSession, setEmployeeSession] = useState(() => {
     const saved = localStorage.getItem('employeeSession');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Date.now() < parsed.expiresAt) return parsed.data;
-      } catch (e) {}
+      } catch (e) { }
     }
     return null;
   });
@@ -56,7 +85,7 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         if (Date.now() < parsed.expiresAt) return parsed.data;
-      } catch (e) {}
+      } catch (e) { }
     }
     return null;
   });
@@ -68,7 +97,7 @@ export default function App() {
     if (view !== 'direct-sign') {
       localStorage.setItem('view', view);
     }
-    
+
     // Redirecciones de seguridad si no hay sesión y no estamos en firma directa
     if (view === 'employee' && !employeeSession) setView('hub');
     if (view === 'hr' && !hrSession) setView('hub');
@@ -77,7 +106,7 @@ export default function App() {
   // Manejar persistencia de sesión e inactividad
   useEffect(() => {
     let lastUpdate = Date.now();
-    
+
     const updateStorage = () => {
       const now = Date.now();
       if (now - lastUpdate > 5000) { // Throttling: actualizar cada 5 segs máximo
@@ -113,10 +142,10 @@ export default function App() {
               setSessionFn(null);
               alert("Tu sesión ha expirado por inactividad de 30 minutos.");
             }
-          } catch (e) {}
+          } catch (e) { }
         }
       };
-      
+
       checkSession('employeeSession', employeeSession, setEmployeeSession);
       checkSession('hrSession', hrSession, setHrSession);
     }, 60000); // Revisar cada 1 minuto
@@ -237,6 +266,8 @@ export default function App() {
   }, []);
 
   const handleLogout = () => {
+    sessionStorage.removeItem('signingToken');
+    setToken(null);
     setEmployeeSession(null);
     setHrSession(null);
     setView('hub');
@@ -266,13 +297,13 @@ export default function App() {
       );
     case 'hr':
       return hrSession ? (
-        <HRDashboard 
-          hrSession={hrSession} 
-          activeTab={hrTab} 
-          setActiveTab={setHrTab} 
-          handleLogout={handleLogout} 
-          theme={theme} 
-          toggleTheme={toggleTheme} 
+        <HRDashboard
+          hrSession={hrSession}
+          activeTab={hrTab}
+          setActiveTab={setHrTab}
+          handleLogout={handleLogout}
+          theme={theme}
+          toggleTheme={toggleTheme}
           switchToEmployeeView={() => {
             if (hrSession.employee) {
               setEmployeeSession(hrSession.employee);
@@ -288,11 +319,11 @@ export default function App() {
       );
     case 'employee':
       return employeeSession ? (
-        <EmployeeDashboard 
-          employee={employeeSession} 
-          handleLogout={handleLogout} 
-          theme={theme} 
-          toggleTheme={toggleTheme} 
+        <EmployeeDashboard
+          employee={employeeSession}
+          handleLogout={handleLogout}
+          theme={theme}
+          toggleTheme={toggleTheme}
           switchToHrView={() => {
             if (employeeSession.role === 'rrhh') {
               setHrSession({ isLoggedIn: true, employee: employeeSession });
