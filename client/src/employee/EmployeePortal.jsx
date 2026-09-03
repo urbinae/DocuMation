@@ -85,17 +85,26 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
     if(e.target.releasePointerCapture && e.pointerId) e.target.releasePointerCapture(e.pointerId);
   };
 
+  // Extraer token de props, Query Parameter (?token=XYZ) o Hash (/#firmar?token=XYZ)
+  const queryParams = new URLSearchParams(window.location.search);
+  const urlToken = queryParams.get('token') || (window.location.hash.includes('token=') ? window.location.hash.split('token=')[1]?.split('&')[0] : null);
+  const effectiveToken = token || urlToken || payslipToSign?.token || null;
+
   useEffect(() => {
     const fetchTokenInfo = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/sign/token/${token}`);
+        if (!effectiveToken) {
+          throw new Error('No se encontró un token de firma válido en la URL ni en los parámetros.');
+        }
+
+        const res = await fetch(`${API_BASE}/api/sign/token/${effectiveToken}`);
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Token no válido');
+        if (!res.ok) throw new Error(data.error || data.message || 'Token no válido');
         
         const psData = data.payslip || data;
         setPayslip({
           id: psData.id,
-          token: psData.token || token,
+          token: psData.token || effectiveToken,
           month: psData.month || psData.periodo,
           status: psData.status,
           employeeName: psData.employeeName || psData.employees?.name || 'Empleado',
@@ -113,7 +122,7 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
       }
     };
 
-    if (isDirectSign && token) {
+    if (isDirectSign) {
       fetchTokenInfo();
     } else if (!isDirectSign && payslipToSign) {
       // Si entramos por panel de empleado ya tenemos la info del recibo
@@ -128,8 +137,11 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
         hasDuplicado: !!(payslipToSign.duplicadoPath || payslipToSign.duplicado_storage_path)
       });
       setLoading(false);
+    } else {
+      setLoading(false);
+      setError('No se proporcionaron datos de recibo para firmar.');
     }
-  }, [token, payslipToSign, isDirectSign]);
+  }, [token, effectiveToken, payslipToSign, isDirectSign]);
 
   useEffect(() => {
     if (loading || error || isSignedSuccess || !canvasRef.current) return;
