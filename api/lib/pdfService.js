@@ -159,24 +159,103 @@ function extractFinancialData(text) {
 
 /**
  * Extrae los datos estructurados de un rango de celdas de una solapa de ExcelJS.
+ * - Respeta celdas combinadas (merged cells) para evitar duplicar el valor en celdas unidas.
+ * - Formatea números con parte decimal a exactamente 2 decimales (ej: 123.40 o 123,40).
  * @param {object} worksheet ExcelJS Worksheet
  * @param {number} startRow
  * @param {number} endRow
  * @returns {object} Datos estructurados de la sección del recibo
  */
 function extractReceiptDataFromRange(worksheet, startRow, endRow) {
+  const monthsEs = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+  const formatDate = (dateObj, rawStr) => {
+    if (!dateObj || isNaN(dateObj.getTime())) return null;
+
+    // Detectar si la celda contenía indicios de "deposito" / "deposit" o formato fecha completa
+    const d = dateObj.getDate();
+    const m = dateObj.getMonth();
+    const y = dateObj.getFullYear();
+
+    // Si el texto raw traía información de depósito o es una fecha normal
+    return {
+      periodFormat: `${monthsEs[m]}-${y}`,
+      shortFormat: `${d}/${m + 1}/${y}`
+    };
+  };
+
+  const formatValue = (val, numVal, rawVal, isDepositContext = false) => {
+    // 1. Detectar objeto Date o String de fecha JS (ej: Thu Jul 30 2026 20:00:00 GMT...)
+    let dateObj = null;
+    if (rawVal instanceof Date) {
+      dateObj = rawVal;
+    } else if (typeof val === 'string' && /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{4}/i.test(val.trim())) {
+      dateObj = new Date(val.trim());
+    }
+
+    if (dateObj && !isNaN(dateObj.getTime())) {
+      const parsedDates = formatDate(dateObj, val);
+      if (parsedDates) {
+        if (isDepositContext) {
+          return parsedDates.shortFormat;
+        }
+        return parsedDates.periodFormat;
+      }
+    }
+
+    // 2. Formatear números a 2 decimales
+    if (typeof numVal === 'number' && !isNaN(numVal)) {
+      if (!Number.isInteger(numVal)) {
+        return numVal.toFixed(2).replace('.', ',');
+      }
+    } else if (typeof val === 'string' && /^-?\d+[\.,]\d+$/.test(val.trim())) {
+      const parsed = parseFloat(val.trim().replace(',', '.'));
+      if (!isNaN(parsed) && !Number.isInteger(parsed)) {
+        return parsed.toFixed(2).replace('.', ',');
+      }
+    }
+    return val;
+  };
+
   const getCellValue = (r, c) => {
     const row = worksheet.getRow(r);
     const cell = row.getCell(c);
-    if (!cell || cell.value == null) return '';
-    if (cell.text != null && cell.text !== '') return String(cell.text).trim();
-    if (typeof cell.value === 'object') {
-      if (cell.value.result != null) return String(cell.value.result).trim();
-      if (Array.isArray(cell.value.richText)) return cell.value.richText.map(rt => rt.text || '').join('').trim();
-      if (cell.value.text != null) return String(cell.value.text).trim();
-      return String(cell.value).trim();
+    if (!cell) return '';
+
+    if (cell.isMerged && cell.master && cell.master.address !== cell.address) {
+      return '';
     }
-    return String(cell.value).trim();
+
+    let rawVal = cell.value;
+    let textVal = cell.text;
+    let numVal = typeof rawVal === 'number' ? rawVal : null;
+
+    if (rawVal == null) return '';
+
+    let res = '';
+    if (textVal != null && textVal !== '') {
+      res = String(textVal).trim();
+    } else if (typeof rawVal === 'object' && !(rawVal instanceof Date)) {
+      if (rawVal.result != null) {
+        res = String(rawVal.result).trim();
+        if (typeof rawVal.result === 'number') numVal = rawVal.result;
+        if (rawVal.result instanceof Date) rawVal = rawVal.result;
+      } else if (Array.isArray(rawVal.richText)) {
+        res = rawVal.richText.map(rt => rt.text || '').join('').trim();
+      } else if (rawVal.text != null) {
+        res = String(rawVal.text).trim();
+      } else {
+        res = String(rawVal).trim();
+      }
+    } else {
+      res = String(rawVal).trim();
+    }
+
+    // Evaluar si la fila o contexto es de fecha de depósito
+    const rowHeaderStr = row.values ? String(row.values).toLowerCase() : '';
+    const isDepositContext = rowHeaderStr.includes('deposito') || rowHeaderStr.includes('depósito') || rowHeaderStr.includes('banco');
+
+    return formatValue(res, numVal, rawVal, isDepositContext);
   };
 
   const rows = [];
@@ -233,7 +312,7 @@ async function renderReceiptSectionToPdfBuffer(worksheet, startRow, endRow, titl
     color: rgb(0.1, 0.2, 0.5)
   });
 
-  page.drawText(`Hoja: ${worksheet.name}`, {
+  page.drawText(`${worksheet.name}`, {
     x: width - 180,
     y: currentY - 17,
     size: 9,
