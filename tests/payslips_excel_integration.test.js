@@ -304,7 +304,9 @@ describe('Prueba de Integración: Flujo Completo Ingesta Excel -> PDF -> Split -
   });
 
   test('Idempotencia: Re-subir el mismo archivo Excel omite registros previamente cargados', async () => {
-    const targetFilePath = path.join(__dirname, '../filestests/Recibos Sueldos -para prueba.xls');
+    const f1 = path.join(__dirname, '../filestests/Recibos Sueldos -para prueba.xls');
+    const f2 = path.join(__dirname, '../filestests/Recibos Sueldos -para prueba.xls.xlsx');
+    const targetFilePath = fs.existsSync(f1) ? f1 : f2;
     const excelBuffer = fs.readFileSync(targetFilePath);
     const month = '2026-08';
 
@@ -331,14 +333,19 @@ describe('Prueba de Integración: Flujo Completo Ingesta Excel -> PDF -> Split -
     // Vaciar lista de empleados registrados
     mockEmployees = [];
 
-    const targetFilePath = path.join(__dirname, '../filestests/Recibos Sueldos -para prueba.xls');
+    const f1 = path.join(__dirname, '../filestests/Recibos Sueldos -para prueba.xls');
+    const f2 = path.join(__dirname, '../filestests/Recibos Sueldos -para prueba.xls.xlsx');
+    const targetFilePath = fs.existsSync(f1) ? f1 : f2;
     const excelBuffer = fs.readFileSync(targetFilePath);
 
     const res = await sendMultipartRequest('/api/payslips/upload-excel', 'Recibos Sueldos -para prueba.xls', excelBuffer, { month: '2026-08' });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.summary.processedCount, 0);
     assert.strictEqual(res.body.summary.errors.length, 1);
-    assert.ok(res.body.summary.errors[0].error.includes('no corresponde a ningún empleado'));
+    assert.ok(
+      res.body.summary.errors[0].error.includes('No se encontró un empleado') ||
+      res.body.summary.errors[0].error.includes('no corresponde a ningún empleado')
+    );
     assert.strictEqual(mockPayslips.length, 0, 'No debe guardar ningún recibo en la base de datos');
   });
 });

@@ -169,22 +169,21 @@ function extractFinancialData(text) {
 function extractReceiptDataFromRange(worksheet, startRow, endRow) {
   const monthsEs = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
-  const formatDate = (dateObj, rawStr) => {
+  const formatDate = (dateObj) => {
     if (!dateObj || isNaN(dateObj.getTime())) return null;
 
-    // Detectar si la celda contenía indicios de "deposito" / "deposit" o formato fecha completa
-    const d = dateObj.getDate();
-    const m = dateObj.getMonth();
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
     const y = dateObj.getFullYear();
+    const rawMonthIndex = dateObj.getMonth();
 
-    // Si el texto raw traía información de depósito o es una fecha normal
     return {
-      periodFormat: `${monthsEs[m]}-${y}`,
-      shortFormat: `${d}/${m + 1}/${y}`
+      periodFormat: `${monthsEs[rawMonthIndex]}-${y}`,
+      shortFormat: `${d}/${m}/${y}`
     };
   };
 
-  const formatValue = (val, numVal, rawVal, isDepositContext = false) => {
+  const formatValue = (val, numVal, rawVal, isShortDateContext = false, isPeriodContext = false) => {
     // 1. Detectar objeto Date o String de fecha JS (ej: Thu Jul 30 2026 20:00:00 GMT...)
     let dateObj = null;
     if (rawVal instanceof Date) {
@@ -194,16 +193,40 @@ function extractReceiptDataFromRange(worksheet, startRow, endRow) {
     }
 
     if (dateObj && !isNaN(dateObj.getTime())) {
-      const parsedDates = formatDate(dateObj, val);
+      const parsedDates = formatDate(dateObj);
       if (parsedDates) {
-        if (isDepositContext) {
-          return parsedDates.shortFormat;
+        if (isPeriodContext) {
+          return parsedDates.periodFormat;
         }
-        return parsedDates.periodFormat;
+        return parsedDates.shortFormat;
       }
     }
 
-    // 2. Formatear números a 2 decimales
+    // 2. Si es string en PeriodContext que representa fecha ISO / YYYY-MM / MM-YYYY / MM/YYYY
+    if (isPeriodContext && typeof val === 'string' && val.trim()) {
+      const cleaned = val.trim();
+      if (/^[a-z]+-\d{4}$/i.test(cleaned)) {
+        return cleaned.toLowerCase();
+      }
+      const yyyyMmMatch = cleaned.match(/^(\d{4})[-/](\d{1,2})(?:[-/]\d{1,2})?$/);
+      if (yyyyMmMatch) {
+        const y = yyyyMmMatch[1];
+        const mIdx = parseInt(yyyyMmMatch[2], 10) - 1;
+        if (mIdx >= 0 && mIdx < 12) {
+          return `${monthsEs[mIdx]}-${y}`;
+        }
+      }
+      const mmYyyyMatch = cleaned.match(/^(\d{1,2})[-/](\d{4})$/);
+      if (mmYyyyMatch) {
+        const mIdx = parseInt(mmYyyyMatch[1], 10) - 1;
+        const y = mmYyyyMatch[2];
+        if (mIdx >= 0 && mIdx < 12) {
+          return `${monthsEs[mIdx]}-${y}`;
+        }
+      }
+    }
+
+    // 3. Formatear números a 2 decimales
     if (typeof numVal === 'number' && !isNaN(numVal)) {
       if (!Number.isInteger(numVal)) {
         return numVal.toFixed(2).replace('.', ',');
@@ -215,6 +238,21 @@ function extractReceiptDataFromRange(worksheet, startRow, endRow) {
       }
     }
     return val;
+  };
+
+  const getCellRawText = (r, c) => {
+    if (r < 1 || c < 1) return '';
+    const row = worksheet.getRow(r);
+    if (!row) return '';
+    const cell = row.getCell(c);
+    if (!cell || cell.value == null) return '';
+    if (cell.text != null && cell.text !== '') return String(cell.text).trim();
+    if (typeof cell.value === 'string') return cell.value.trim();
+    if (typeof cell.value === 'object') {
+      if (cell.value.result != null) return String(cell.value.result).trim();
+      if (cell.value.text != null) return String(cell.value.text).trim();
+    }
+    return String(cell.value).trim();
   };
 
   const getCellValue = (r, c) => {
@@ -251,11 +289,38 @@ function extractReceiptDataFromRange(worksheet, startRow, endRow) {
       res = String(rawVal).trim();
     }
 
-    // Evaluar si la fila o contexto es de fecha de depósito
+    const headerAboveText = getCellRawText(r - 1, c).toLowerCase();
+    const headerLeftText = getCellRawText(r, c - 1).toLowerCase();
     const rowHeaderStr = row.values ? String(row.values).toLowerCase() : '';
-    const isDepositContext = rowHeaderStr.includes('deposito') || rowHeaderStr.includes('depósito') || rowHeaderStr.includes('banco');
+    const prevRowHeaderStr = worksheet.getRow(r - 1)?.values ? String(worksheet.getRow(r - 1).values).toLowerCase() : '';
 
-    return formatValue(res, numVal, rawVal, isDepositContext);
+    const isPeriodContext = (
+      headerAboveText.includes('periodo') ||
+      headerAboveText.includes('período') ||
+      headerAboveText.includes('per.') ||
+      headerLeftText.includes('periodo') ||
+      headerLeftText.includes('período') ||
+      rowHeaderStr.includes('periodo abonado') ||
+      rowHeaderStr.includes('periodo seg') ||
+      prevRowHeaderStr.includes('periodo abonado') ||
+      prevRowHeaderStr.includes('periodo seg')
+    );
+
+    const isShortDateContext = !isPeriodContext && (
+      headerAboveText.includes('deposito') ||
+      headerAboveText.includes('depósito') ||
+      headerAboveText.includes('ingreso') ||
+      headerAboveText.includes('f.ing') ||
+      headerAboveText.includes('f.dep') ||
+      headerAboveText.includes('fecha') ||
+      rowHeaderStr.includes('deposito') ||
+      rowHeaderStr.includes('depósito') ||
+      rowHeaderStr.includes('ingreso') ||
+      rowHeaderStr.includes('f.ing') ||
+      rowHeaderStr.includes('f.dep')
+    );
+
+    return formatValue(res, numVal, rawVal, isShortDateContext, isPeriodContext);
   };
 
   const rows = [];
