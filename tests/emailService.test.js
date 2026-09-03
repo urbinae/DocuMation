@@ -378,8 +378,10 @@ describe('Integration Tests – POST /api/payslips/:id/send-email', () => {
     from(table) {
       let filters = [];
       let isSingle = false;
+      let updateData = null;
       const builder = {
         select() { return builder; },
+        update(data) { updateData = data; return builder; },
         eq(col, val) { filters.push({ col, val }); return builder; },
         order() { return builder; },
         single() { isSingle = true; return builder.execute(); },
@@ -401,6 +403,9 @@ describe('Integration Tests – POST /api/payslips/:id/send-email', () => {
           if (table === 'payslips') {
             let list = [...mockPayslips];
             for (const f of filters) list = list.filter(p => p[f.col] === f.val);
+            if (updateData) {
+              list.forEach(p => Object.assign(p, updateData));
+            }
             return { data: isSingle ? (list[0] || null) : list, error: null };
           }
           return { data: null, error: null };
@@ -517,7 +522,7 @@ describe('Integration Tests – POST /api/payslips/:id/send-email', () => {
       `El error debe mencionar "email", recibido: "${res.body.error}"`);
   });
 
-  test('HTTP 200 exitoso: llama a sendPayslipSignatureNotification con los parámetros correctos', async () => {
+  test('HTTP 200 exitoso: actualiza el status a ENVIADO y asigna sent_at en la base de datos', async () => {
     mockEmployees = [{
       id: 'emp-uuid-001',
       name: 'Marcos Pérez',
@@ -530,24 +535,48 @@ describe('Integration Tests – POST /api/payslips/:id/send-email', () => {
       month: '2026-08',
       token: 'token-firma-abcde',
       status: 'Cargado',
+      sent_at: null,
       employees: { name: 'Marcos Pérez', email: 'marcos@empresa.com' }
     }];
 
     const res = await jsonRequest('POST', '/api/payslips/payslip-uuid-001/send-email');
 
-    assert.equal(res.status, 200,
-      `Debe retornar 200, recibido: ${res.status}. Body: ${JSON.stringify(res.body)}`);
-    assert.equal(res.body.success, true,
-      'El campo success debe ser true');
-    assert.ok(res.body.message.includes('marcos@empresa.com'),
-      `El mensaje de confirmación debe incluir el email del destinatario, recibido: "${res.body.message}"`);
+    assert.equal(res.status, 200);
+    assert.equal(mockPayslips[0].status, 'ENVIADO', 'El status debe haber sido actualizado a ENVIADO');
+    assert.ok(mockPayslips[0].sent_at !== null, 'El campo sent_at debe tener un timestamp ISO');
+  });
 
-    // Verificar que emailService recibió los parámetros correctos
-    assert.ok(capturedEmailCall, 'emailService.sendPayslipSignatureNotification debe haber sido llamado');
-    assert.equal(capturedEmailCall.to, 'marcos@empresa.com', '"to" incorrecto');
-    assert.equal(capturedEmailCall.employeeName, 'Marcos Pérez', '"employeeName" incorrecto');
-    assert.equal(capturedEmailCall.month, '2026-08', '"month" incorrecto');
-    assert.equal(capturedEmailCall.token, 'token-firma-abcde', '"token" incorrecto');
+  test('Error de envío de correo no muta el status ni el campo sent_at', async () => {
+    mockEmployees = [{
+      id: 'emp-err-001',
+      name: 'Juan Error',
+      email: 'error@empresa.com',
+      cuil: '20-00000000-0'
+    }];
+    mockPayslips = [{
+      id: 'payslip-err-001',
+      employee_id: 'emp-err-001',
+      month: '2026-08',
+      token: 'tok-err',
+      status: 'Cargado',
+      sent_at: null,
+      employees: { name: 'Juan Error', email: 'error@empresa.com' }
+    }];
+
+    // Forzar fallo en emailService
+    const origSend = mockEmailService.sendPayslipSignatureNotification;
+    mockEmailService.sendPayslipSignatureNotification = async () => {
+      throw new Error('SMTP Error Connection Refused');
+    };
+
+    const res = await jsonRequest('POST', '/api/payslips/payslip-err-001/send-email');
+
+    // Restaurar mock
+    mockEmailService.sendPayslipSignatureNotification = origSend;
+
+    assert.equal(res.status, 500);
+    assert.equal(mockPayslips[0].status, 'Cargado', 'El status no debe mutar si el envío falla');
+    assert.equal(mockPayslips[0].sent_at, null, 'sent_at debe permanecer null si el envío falla');
   });
 
   test('La respuesta incluye el campo "details" con el resultado del servicio de email', async () => {

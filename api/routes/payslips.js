@@ -619,9 +619,25 @@ async function sendEmailHandler(req, res) {
       token: payslip.token
     });
 
+    const sentAt = new Date().toISOString();
+    const { data: updatedPayslip, error: updateErr } = await supabase
+      .from('payslips')
+      .update({
+        status: 'ENVIADO',
+        sent_at: sentAt
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) {
+      console.error(`[sendEmailHandler] Error actualizando status de recibo ${id}:`, updateErr);
+    }
+
     res.json({
       success: true,
       message: `Notificación enviada a ${employeeEmail}`,
+      payslip: updatedPayslip ? enrichPayslipWithUrls(updatedPayslip) : undefined,
       details: result
     });
   } catch (err) {
@@ -682,6 +698,15 @@ router.post('/send-bulk', async (req, res) => {
           month: payslip.month,
           token: payslip.token
         });
+
+        const sentAt = new Date().toISOString();
+        await supabase
+          .from('payslips')
+          .update({
+            status: 'ENVIADO',
+            sent_at: sentAt
+          })
+          .eq('id', id);
 
         results.push({ id, email: employeeEmail, ...result });
       } catch (innerErr) {
