@@ -8,6 +8,7 @@ import {
 import { Document, Page, pdfjs } from 'react-pdf';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+import { downloadPdfFile } from '../utils/downloadHelper';
 
 import ThemeToggle from '../shared/ThemeToggle';
 import FinancialAnalyticsTab from './FinancialAnalyticsTab';
@@ -223,25 +224,40 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
                             <td style={{ fontWeight: '600' }}>{ps.month}</td>
                             <td>
                               {hasOriginal ? (
-                                <a href={`${API_BASE}/api/download/original/${ps.id}`} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                                  onClick={() => downloadPdfFile(`${API_BASE}/api/download/original/${ps.id}`, `original_${ps.month}.pdf`)}
+                                >
                                   <Download size={12} />
                                   Descargar
-                                </a>
+                                </button>
                               ) : (
                                 <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No cargado</span>
                               )}
                             </td>
                             <td>
                               {isSigned ? (
-                                <a href={`${API_BASE}/api/download/signed/${ps.id}`} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                                  onClick={() => downloadPdfFile(`${API_BASE}/api/download/signed/${ps.id}`, `recibo_firmado_${ps.month}.pdf`)}
+                                >
                                   <Download size={12} />
                                   Descargar Firmado
-                                </a>
+                                </button>
                               ) : hasDuplicado ? (
-                                <a href={`${API_BASE}/api/download/duplicado/${ps.id}`} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                                  onClick={() => downloadPdfFile(`${API_BASE}/api/download/duplicado/${ps.id}`, `duplicado_${ps.month}.pdf`)}
+                                >
                                   <Download size={12} />
                                   Borrador
-                                </a>
+                                </button>
                               ) : (
                                 <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No cargado</span>
                               )}

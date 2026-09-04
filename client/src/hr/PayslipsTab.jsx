@@ -8,6 +8,7 @@ import {
 import { Document, Page, pdfjs } from 'react-pdf';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+import { downloadPdfFile } from '../utils/downloadHelper';
 
 export default function PayslipsTab({ payslips, employees, refreshData, triggerAlert }) {
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -616,15 +617,20 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 Enviar Lote
               </button>
 
-              <a
-                href={totalInPeriod > 0 ? `${API_BASE}/api/download-zip/${selectedMonth}` : '#'}
+              <button
+                type="button"
                 className={`btn btn-secondary ${signedInPeriod === 0 ? 'disabled' : ''}`}
                 style={{ pointerEvents: signedInPeriod === 0 ? 'none' : 'auto', opacity: signedInPeriod === 0 ? 0.5 : 1 }}
                 title="Descargar todos los Duplicados Firmados en un ZIP"
+                onClick={() => {
+                  if (totalInPeriod > 0 && signedInPeriod > 0) {
+                    downloadPdfFile(`${API_BASE}/api/download-zip/${selectedMonth}`, `recibos_${selectedMonth}.zip`);
+                  }
+                }}
               >
                 <FileDown size={15} />
                 Descargar ZIP
-              </a>
+              </button>
               <button
                 className="btn btn-secondary"
                 style={{ border: '1px solid rgba(239, 68, 68, 0.4)', color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -692,16 +698,26 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <span style={{ fontSize: '12px' }}>
                               📄 Original: {hasOrg ? (
-                                <a href={`${API_BASE}/api/download/original/${ps.id}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }} title="Descargar Original">
+                                <button
+                                  type="button"
+                                  style={{ color: 'var(--secondary)', textDecoration: 'none', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
+                                  title="Descargar Original"
+                                  onClick={() => downloadPdfFile(`${API_BASE}/api/download/original/${ps.id}`, ps.originalFilename || `original_${ps.id}.pdf`)}
+                                >
                                   {ps.originalFilename ? ps.originalFilename.substring(0, 20) + '...' : 'Descargar'} <Download size={10} style={{ display: 'inline' }} />
-                                </a>
+                                </button>
                               ) : <span style={{ color: 'var(--text-muted)' }}>Falta cargar</span>}
                             </span>
                             <span style={{ fontSize: '12px' }}>
                               📄 Duplicado: {hasDup ? (
-                                <a href={`${API_BASE}/api/download/duplicado/${ps.id}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }} title="Descargar Duplicado Base">
+                                <button
+                                  type="button"
+                                  style={{ color: 'var(--secondary)', textDecoration: 'none', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
+                                  title="Descargar Duplicado Base"
+                                  onClick={() => downloadPdfFile(`${API_BASE}/api/download/duplicado/${ps.id}`, ps.duplicadoFilename || `duplicado_${ps.id}.pdf`)}
+                                >
                                   {ps.duplicadoFilename ? ps.duplicadoFilename.substring(0, 20) + '...' : 'Descargar'} <Download size={10} style={{ display: 'inline' }} />
-                                </a>
+                                </button>
                               ) : <span style={{ color: 'var(--text-muted)' }}>Falta cargar</span>}
                             </span>
                           </div>
@@ -789,15 +805,16 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             )}
 
                             {isSigned && (
-                              <a
-                                href={`${API_BASE}/api/download/signed/${ps.id}`}
+                              <button
+                                type="button"
                                 className="btn btn-primary"
                                 style={{ padding: '6px 10px', background: 'var(--success)', boxShadow: 'none' }}
                                 title="Descargar Duplicado Firmado"
+                                onClick={() => downloadPdfFile(`${API_BASE}/api/download/signed/${ps.id}`, `recibo_firmado_${ps.id}.pdf`)}
                               >
                                 <Download size={14} />
                                 Firmado
-                              </a>
+                              </button>
                             )}
 
                             <button

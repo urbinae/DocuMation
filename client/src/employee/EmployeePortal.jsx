@@ -8,6 +8,7 @@ import {
 import { Document, Page, pdfjs } from 'react-pdf';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+import { downloadPdfFile } from '../utils/downloadHelper';
 
 import ThemeToggle from '../shared/ThemeToggle';
 export default function EmployeePortal({ token, payslipToSign = null, handleLogout, isDirectSign = true, theme, toggleTheme }) {
@@ -369,15 +370,24 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '350px', margin: '0 auto' }}>
             {payslip.hasOriginal && (
-              <a href={`${API_BASE}/api/download/original/${payslip.id}`} className="btn btn-secondary">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => downloadPdfFile(`${API_BASE}/api/download/original/${payslip.id}`, `original_${payslip.month}.pdf`)}
+              >
                 <Download size={16} />
                 Descargar Mi Recibo (Original)
-              </a>
+              </button>
             )}
-            <a href={`${API_BASE}/api/download/signed/${payslip.id}`} className="btn btn-primary" style={{ background: 'var(--success)', boxShadow: '0 4px 14px 0 rgba(16, 185, 129, 0.3)' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ background: 'var(--success)', boxShadow: '0 4px 14px 0 rgba(16, 185, 129, 0.3)' }}
+              onClick={() => downloadPdfFile(`${API_BASE}/api/download/signed/${payslip.id}`, `recibo_firmado_${payslip.month}.pdf`)}
+            >
               <Download size={16} />
               Descargar Duplicado Firmado
-            </a>
+            </button>
           </div>
         </div>
       ) : (

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+import { downloadPdfFile } from './utils/downloadHelper';
 
 // ==========================================
 // LOGIN COMERCIAL
@@ -802,16 +803,15 @@ export function CommercialDashboard({ session, handleLogout }) {
                         })}
                         <td style={{ display: 'flex', gap: '8px' }}>
                           {c.status === 'Firmado' && (
-                            <a 
-                              href={`${API_BASE}/api/contracts/pdf/${c.id}`} 
-                              target="_blank" 
-                              rel="noreferrer"
+                            <button
+                              type="button"
                               className="btn btn-icon"
                               title="Descargar PDF Firmado"
-                              style={{ color: 'var(--success)' }}
+                              style={{ color: 'var(--success)', background: 'none', border: 'none', cursor: 'pointer' }}
+                              onClick={() => downloadPdfFile(`${API_BASE}/api/contracts/pdf/${c.id}`, c.title || `contrato_${c.id}.pdf`)}
                             >
                               <Download size={16} />
-                            </a>
+                            </button>
                           )}
                           <button 
                             className="btn btn-icon" 
@@ -985,15 +985,14 @@ export function CommercialDashboard({ session, handleLogout }) {
                             </td>
                             <td>{new Date(c.uploadedAt).toLocaleDateString()}</td>
                             <td>
-                              <a 
-                                href={`${API_BASE}/api/contracts/pdf/${c.id}`} 
-                                target="_blank" 
-                                rel="noreferrer"
+                              <button
+                                type="button"
                                 className="btn btn-primary"
                                 style={{ padding: '6px 12px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                onClick={() => downloadPdfFile(`${API_BASE}/api/contracts/pdf/${c.id}`, c.title || `contrato_${c.id}.pdf`)}
                               >
                                 <Download size={14} /> Descargar PDF
-                              </a>
+                              </button>
                             </td>
                           </tr>
                         ))}

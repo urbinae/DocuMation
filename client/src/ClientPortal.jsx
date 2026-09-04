@@ -3,6 +3,7 @@ import { Document, Page } from 'react-pdf';
 import { CheckCircle, AlertTriangle, Download, Briefcase } from 'lucide-react';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+import { downloadPdfFile } from './utils/downloadHelper';
 
 export function ClientPortal({ token, theme, toggleTheme }) {
   const [contract, setContract] = useState(null);
@@ -155,7 +156,9 @@ export function ClientPortal({ token, theme, toggleTheme }) {
   };
 
   const handleDownload = () => {
-    window.open(`${API_BASE}/api/contracts/pdf/${contract.id}?download=true`, '_blank');
+    if (contract?.id) {
+      downloadPdfFile(`${API_BASE}/api/contracts/pdf/${contract.id}?download=true`, contract.title || `contrato_${contract.id}.pdf`);
+    }
   };
 
   if (loading) return <div style={{ textAlign: 'center', padding: '50px' }}>Cargando portal comercial...</div>;
