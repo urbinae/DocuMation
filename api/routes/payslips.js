@@ -276,7 +276,7 @@ router.post('/upload', fileUploadMiddleware, async (req, res) => {
 
 /**
  * POST /api/payslips/upload-excel
- * Carga masiva de Excel (.xlsx) con procesamiento nativo en memoria (pdf-lib & exceljs)
+ * Carga masiva de Excel (.xls y .xlsx) usando exceljs de forma nativa para Vercel en memoria
  */
 router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
   try {
@@ -284,189 +284,259 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Debe adjuntar un archivo Excel (.xlsx) en la petición (campo "file" o "excel")' });
     }
 
-    const month = req.body.month || new Date().toISOString().substring(0, 7);
+    const { month, jobId } = req.body;
+    console.log(`[EXCEL] Upload start. month=${month}, jobId=${jobId}`);
+
+    if (!month) {
+      return res.status(400).json({ error: "El período (month) es requerido (ej: '2026-05')" });
+    }
+
+    if (!global.excelProgress) global.excelProgress = {};
+
+    const summary = {
+      total: 0,
+      successCount: 0,
+      failCount: 0,
+      skippedCount: 0,
+      errors: []
+    };
+
+    console.log('[EXCEL] Procesando archivo Excel de forma nativa con exceljs en memoria...');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(req.file.buffer);
 
-    let totalSheets = 0;
-    let processedCount = 0;
-    let skippedCount = 0;
-    const errors = [];
     const excludedSheets = ['MODELO', 'SICOSS', 'RESUMEN', 'CUSS', 'HOJA6', 'HOJA 6', 'SAC_VAC', 'PARAMETROS'];
+    const validWorksheets = workbook.worksheets.filter(ws => {
+      const sheetName = ws.name.trim();
+      return ws.state !== 'hidden' && !excludedSheets.includes(sheetName.toUpperCase()) && !/^\d+$/.test(sheetName);
+    });
 
-    const { data: allEmployees } = await supabase
-      .from('employees')
-      .select('id, cuil, name');
+    summary.total = validWorksheets.length;
 
-    for (const worksheet of workbook.worksheets) {
-      const sheetNameTrimmed = worksheet.name.trim();
-      const sheetNameUpper = sheetNameTrimmed.toUpperCase();
+    if (jobId) {
+      global.excelProgress[jobId] = { current: 0, total: summary.total };
+    }
 
-      // 1. Filtrado de Hojas de Control y Números
-      if (
-        worksheet.state === 'hidden' ||
-        excludedSheets.includes(sheetNameUpper) ||
-        /^\d+$/.test(sheetNameTrimmed)
-      ) {
-        continue;
-      }
+    const { data: employees } = await supabase.from('employees').select('id, name, email, cuil');
+    const { data: allPayslips } = await supabase.from('payslips').select('id, employee_id, month, original_hash, duplicado_hash, original_storage_path, duplicado_storage_path');
+    const { data: dbSettings } = await supabase.from('settings').select('value').eq('key', 'duplicateDetectionEnabled').maybeSingle();
+    const duplicateDetectionEnabled = dbSettings?.value !== undefined ? dbSettings.value : true;
 
-      totalSheets++;
+    for (let i = 0; i < validWorksheets.length; i++) {
+      const worksheet = validWorksheets[i];
+      const sheetName = worksheet.name.trim();
 
-      // 2. Extracción y generación de Buffers PDF independientes (Duplicado B2:G77 y Original B80:G153)
-      const { dupBuffer, origBuffer } = await pdfService.excelToPdfBuffer(worksheet);
+      try {
+        let origBytes, dupBytes;
+        let firstImgData = null;
 
-      // 3. Extraer texto completo de celdas para detección de CUIL y matcheo
-      let worksheetText = '';
-      worksheet.eachRow((row) => {
-        row.eachCell((cell) => {
-          let val = '';
-          if (cell.value != null) {
-            if (cell.text != null && cell.text !== '') val = String(cell.text);
-            else if (typeof cell.value === 'object') {
-              if (cell.value.result != null) val = String(cell.value.result);
-              else if (Array.isArray(cell.value.richText)) val = cell.value.richText.map(rt => rt.text || '').join('');
-              else if (cell.value.text != null) val = String(cell.value.text);
-              else val = String(cell.value);
-            } else val = String(cell.value);
+        const images = worksheet.getImages ? worksheet.getImages() : [];
+
+        if (images && images.length > 0) {
+          if (images.length >= 2) {
+            images.sort((a, b) => {
+              const rA = a.range?.tl?.nativeRow ?? a.range?.tl?.row ?? 0;
+              const rB = b.range?.tl?.nativeRow ?? b.range?.tl?.row ?? 0;
+              return rA - rB;
+            });
+
+            const topImgRef = images[0];
+            const botImgRef = images[1];
+            const topImgData = workbook.model.media?.find(m => m.index === topImgRef.imageId);
+            const botImgData = workbook.model.media?.find(m => m.index === botImgRef.imageId);
+
+            if (!topImgData || !botImgData) {
+              summary.failCount++;
+              summary.errors.push(`Solapa "${sheetName}": Fallo al extraer datos de las imágenes.`);
+              continue;
+            }
+
+            firstImgData = topImgData;
+            dupBytes = await pdfService.buildPdfWithImage(topImgData, [595.28, 420.94]);
+            origBytes = await pdfService.buildPdfWithImage(botImgData, [595.28, 420.94]);
+          } else {
+            const firstImgRef = images[0];
+            firstImgData = workbook.model.media?.find(m => m.index === firstImgRef.imageId);
+
+            if (!firstImgData) {
+              summary.failCount++;
+              summary.errors.push(`Solapa "${sheetName}": Fallo al extraer datos de la imagen.`);
+              continue;
+            }
+
+            const fullPdfBytes = await pdfService.buildPdfWithImage(firstImgData, [595.28, 841.89]);
+            const splitResult = await pdfService.splitPdfBuffer(fullPdfBytes);
+            origBytes = splitResult.origBuffer;
+            dupBytes = splitResult.dupBuffer;
           }
-          if (val.trim()) worksheetText += val.trim() + ' ';
-        });
-      });
-
-      let analysis = await pdfService.analyzeBuffer(dupBuffer, worksheet.name);
-
-      // Buscar CUILs en el texto
-      const foundCuils = [];
-      const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
-      const fullTextToScan = `${analysis.text || ''} ${worksheetText}`;
-      let match;
-      while ((match = cuilRegex.exec(fullTextToScan)) !== null) {
-        const cleanMatch = (match[1] || match[0]).replace(/\D/g, '');
-        if (pdfService.isValidCUIL(cleanMatch) && !foundCuils.includes(cleanMatch)) {
-          foundCuils.push(cleanMatch);
+        } else {
+          // Fallback a renderizado de celdas nativo
+          const rendered = await pdfService.excelToPdfBuffer(worksheet);
+          dupBytes = rendered.dupBuffer;
+          origBytes = rendered.origBuffer;
         }
-      }
 
-      // Matcheo con Empleado en Base de Datos por CUIL o por Nombre de Hoja
-      let employee = null;
-      let matchedCuil = null;
+        let analysis = {};
+        if (dupBytes) {
+          analysis = await pdfService.analyzeBuffer(dupBytes, sheetName);
+        }
 
-      for (const cuilCandidate of foundCuils) {
-        const candidateFormatted = pdfService.formatCUIL(cuilCandidate);
-        const emp = (allEmployees || []).find(e => {
-          const empClean = String(e.cuil || '').replace(/\D/g, '');
-          return empClean === cuilCandidate || e.cuil === cuilCandidate || e.cuil === candidateFormatted;
+        let worksheetText = '';
+        worksheet.eachRow((row) => {
+          row.eachCell((cell) => {
+            let val = '';
+            if (cell.value != null) {
+              if (cell.text != null && cell.text !== '') val = String(cell.text);
+              else if (typeof cell.value === 'object') {
+                if (cell.value.result != null) val = String(cell.value.result);
+                else if (Array.isArray(cell.value.richText)) val = cell.value.richText.map(rt => rt.text || '').join('');
+                else if (cell.value.text != null) val = String(cell.value.text);
+                else val = String(cell.value);
+              } else val = String(cell.value);
+            }
+            if (val.trim()) worksheetText += val.trim() + ' ';
+          });
         });
 
-        if (emp) {
-          employee = emp;
-          matchedCuil = cuilCandidate;
-          break;
+        const foundCuils = [];
+        const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
+        const fullScanText = `${analysis.text || ''} ${worksheetText}`;
+        let match;
+        while ((match = cuilRegex.exec(fullScanText)) !== null) {
+          const cleanMatch = (match[1] || match[0]).replace(/\D/g, '');
+          if (pdfService.isValidCUIL(cleanMatch) && !foundCuils.includes(cleanMatch)) {
+            foundCuils.push(cleanMatch);
+          }
         }
-      }
 
-      if (!employee) {
-        const sheetClean = sheetNameTrimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        employee = (allEmployees || []).find(e => {
-          const empNameClean = (e.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-          return sheetClean.includes(empNameClean) || empNameClean.includes(sheetClean);
-        });
-        if (employee) {
-          matchedCuil = String(employee.cuil || '').replace(/\D/g, '');
+        let employeeId = null;
+        let detectedCuil = foundCuils.length > 0 ? foundCuils[0] : (analysis.cuil || null);
+        let matchedEmp = null;
+
+        if (detectedCuil) {
+          const cleanDet = String(detectedCuil).replace(/\D/g, '');
+          matchedEmp = (employees || []).find(e => String(e.cuil || '').replace(/\D/g, '') === cleanDet);
+          if (matchedEmp) employeeId = matchedEmp.id;
         }
+
+        // Fallback matcheo por nombre de la solapa
+        if (!employeeId) {
+          const sheetClean = sheetName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          matchedEmp = (employees || []).find(e => {
+            const empNameClean = (e.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            return sheetClean.includes(empNameClean) || empNameClean.includes(sheetClean);
+          });
+          if (matchedEmp) {
+            employeeId = matchedEmp.id;
+            detectedCuil = String(matchedEmp.cuil || '').replace(/\D/g, '');
+            console.log(`[EXCEL] Solapa "${sheetName}": Empleado emparejado por nombre (Fallback OCR) -> ${matchedEmp.name}`);
+          }
+        }
+
+        if (!employeeId) {
+          summary.failCount++;
+          summary.errors.push(`Solapa "${sheetName}": No se subió porque no se detectó el CUIL por OCR ni se encontró empleado con ese nombre.`);
+          continue;
+        }
+
+        const origHash = pdfService.getBufferHash(origBytes);
+        const dupHash = pdfService.getBufferHash(dupBytes);
+        const imgHash = firstImgData ? pdfService.getBufferHash(firstImgData.buffer) : null;
+
+        if (duplicateDetectionEnabled) {
+          const isDuplicate = (allPayslips || []).some(p =>
+            (p.original_hash && (p.original_hash === origHash || p.original_hash === imgHash)) ||
+            (p.duplicado_hash && (p.duplicado_hash === dupHash || p.duplicado_hash === imgHash))
+          );
+          if (isDuplicate) {
+            summary.failCount++;
+            summary.errors.push(`Solapa "${sheetName}": El recibo exacto ya fue subido (Duplicado global).`);
+            continue;
+          }
+        }
+
+        const existingRecord = (allPayslips || []).find(p =>
+          p.employee_id === employeeId && p.month === month
+        );
+
+        if (existingRecord && existingRecord.original_storage_path && existingRecord.duplicado_storage_path) {
+          summary.skippedCount++;
+          summary.errors.push(`Solapa "${sheetName}": Se omitió porque ya existe un recibo cargado para este empleado en el período ${month}.`);
+          continue;
+        }
+
+        const cleanSheetName = pdfService.sanitizeFileName(sheetName);
+        const origStoragePath = `originals/${uuidv4()}_${cleanSheetName}_original.pdf`;
+        const dupStoragePath = `duplicados/${uuidv4()}_${cleanSheetName}_duplicado.pdf`;
+
+        const [origUpload, dupUpload] = await Promise.all([
+          supabase.storage.from('payslips').upload(origStoragePath, origBytes, { contentType: 'application/pdf', upsert: true }),
+          supabase.storage.from('payslips').upload(dupStoragePath, dupBytes, { contentType: 'application/pdf', upsert: true })
+        ]);
+
+        if (origUpload.error || dupUpload.error) {
+          summary.failCount++;
+          summary.errors.push(`Solapa "${sheetName}": Error al subir a Storage: ${origUpload.error?.message || dupUpload.error?.message}`);
+          continue;
+        }
+
+        if (existingRecord) {
+          await supabase
+            .from('payslips')
+            .update({
+              original_storage_path: origStoragePath,
+              duplicado_storage_path: dupStoragePath,
+              original_hash: origHash,
+              duplicado_hash: dupHash,
+              status: 'Cargado',
+              financial_data: analysis.financialData || existingRecord.financial_data
+            })
+            .eq('id', existingRecord.id);
+        } else {
+          await supabase
+            .from('payslips')
+            .insert([{
+              employee_id: employeeId,
+              detected_cuil: detectedCuil,
+              month,
+              original_storage_path: origStoragePath,
+              duplicado_storage_path: dupStoragePath,
+              original_hash: origHash,
+              duplicado_hash: dupHash,
+              status: 'Cargado',
+              token: uuidv4(),
+              financial_data: analysis.financialData || null
+            }]);
+        }
+
+        summary.successCount++;
+      } catch (err) {
+        summary.failCount++;
+        summary.errors.push(`Error procesando solapa "${sheetName}": ${err.message}`);
       }
 
-      if (!employee) {
-        const reportedCuil = foundCuils.length > 0 ? foundCuils.join(', ') : 'no detectado';
-        errors.push({ sheet: worksheet.name, cuil: reportedCuil, error: `No se encontró un empleado registrado para la hoja '${worksheet.name}'` });
-        continue;
+      if (jobId && global.excelProgress[jobId]) {
+        global.excelProgress[jobId].current = i + 1;
       }
+    }
 
-      analysis.cuil = matchedCuil || String(employee.cuil || '').replace(/\D/g, '');
-      analysis.formattedCuil = pdfService.formatCUIL(analysis.cuil);
-
-      // Verificación si ya existe el recibo completo para ese mes
-      const { data: existingPayslip } = await supabase
-        .from('payslips')
-        .select('*')
-        .eq('employee_id', employee.id)
-        .eq('month', month)
-        .maybeSingle();
-
-      if (existingPayslip && existingPayslip.original_storage_path && existingPayslip.duplicado_storage_path) {
-        skippedCount++;
-        continue;
-      }
-
-      // 4. Hashes y Rutas de Supabase Storage
-      const origHash = pdfService.getBufferHash(origBuffer);
-      const dupHash = pdfService.getBufferHash(dupBuffer);
-
-      const cleanSheetName = pdfService.sanitizeFileName(worksheet.name);
-      const origStoragePath = `originals/${uuidv4()}_${cleanSheetName}_original.pdf`;
-      const dupStoragePath = `duplicados/${uuidv4()}_${cleanSheetName}_duplicado.pdf`;
-
-      // 5. Persistencia en Supabase Storage directamente desde memoria
-      const [origUpload, dupUpload] = await Promise.all([
-        supabase.storage.from('payslips').upload(origStoragePath, origBuffer, { contentType: 'application/pdf', upsert: true }),
-        supabase.storage.from('payslips').upload(dupStoragePath, dupBuffer, { contentType: 'application/pdf', upsert: true })
-      ]);
-
-      if (origUpload.error || dupUpload.error) {
-        errors.push({ sheet: worksheet.name, error: `Error subiendo archivos a Storage: ${origUpload.error?.message || dupUpload.error?.message}` });
-        continue;
-      }
-
-      // 6. Guardar/Actualizar en Supabase PostgreSQL (tabla 'payslips')
-      if (existingPayslip) {
-        await supabase
-          .from('payslips')
-          .update({
-            original_storage_path: origStoragePath,
-            duplicado_storage_path: dupStoragePath,
-            original_hash: origHash,
-            duplicado_hash: dupHash,
-            status: 'Cargado'
-          })
-          .eq('id', existingPayslip.id);
-      } else {
-        await supabase
-          .from('payslips')
-          .insert([{
-            employee_id: employee.id,
-            detected_cuil: analysis.cuil,
-            month,
-            original_storage_path: origStoragePath,
-            duplicado_storage_path: dupStoragePath,
-            original_hash: origHash,
-            duplicado_hash: dupHash,
-            status: 'Cargado',
-            token: uuidv4(),
-            financial_data: analysis.financialData
-          }]);
-      }
-
-      processedCount++;
+    if (jobId && global.excelProgress) {
+      delete global.excelProgress[jobId];
     }
 
     res.json({
       success: true,
-      message: 'Ingesta de Excel procesada correctamente',
-      total: totalSheets,
-      successCount: processedCount,
-      skippedCount,
-      failCount: errors.length,
-      errors,
-      summary: {
-        totalSheets,
-        processedCount,
-        skippedCount,
-        errors
-      }
+      message: 'Ingesta masiva de Excel procesada correctamente',
+      total: summary.total,
+      successCount: summary.successCount,
+      failCount: summary.failCount,
+      skippedCount: summary.skippedCount,
+      errors: summary.errors,
+      summary
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Error en ingesta masiva de Excel', details: err.message });
+  } catch (error) {
+    console.error('Error en la subida Excel:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

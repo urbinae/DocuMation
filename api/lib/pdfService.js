@@ -583,6 +583,44 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
     });
   }
 
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
+
+/**
+ * Helper para construir un Buffer PDF a partir de una imagen embebida en memoria
+ * @param {object} imgData { buffer: Buffer, extension: string }
+ * @param {number[]} pageDimensions [width, height]
+ * @returns {Promise<Buffer>}
+ */
+async function buildPdfWithImage(imgData, pageDimensions = [595.28, 841.89]) {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage(pageDimensions);
+  let pdfImg;
+  const ext = String(imgData.extension || imgData.type || '').toLowerCase();
+  
+  if (ext === 'png') {
+    pdfImg = await doc.embedPng(imgData.buffer);
+  } else if (ext === 'jpeg' || ext === 'jpg') {
+    pdfImg = await doc.embedJpg(imgData.buffer);
+  } else {
+    try {
+      pdfImg = await doc.embedPng(imgData.buffer);
+    } catch {
+      pdfImg = await doc.embedJpg(imgData.buffer);
+    }
+  }
+
+  const dims = pdfImg.scaleToFit(page.getWidth() - 40, page.getHeight() - 40);
+  page.drawImage(pdfImg, {
+    x: (page.getWidth() - dims.width) / 2,
+    y: (page.getHeight() - dims.height) / 2,
+    width: dims.width,
+    height: dims.height
+  });
+
+  const pdfBytes = await doc.save();
+  return Buffer.from(pdfBytes);
 }
 
 module.exports = {
@@ -594,5 +632,7 @@ module.exports = {
   extractFinancialData,
   excelToPdfBuffer,
   splitPdfBuffer,
-  signPdfBuffer
+  signPdfBuffer,
+  buildPdfWithImage
 };
+
