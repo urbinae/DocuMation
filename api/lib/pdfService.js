@@ -413,6 +413,17 @@ async function renderReceiptSectionToPdfBuffer(worksheet, startRow, endRow, titl
       const cellText = rowData.cells[i];
       const cellW = colWidths[i] || 70;
 
+      // Dibujar borde de celda
+      page.drawRectangle({
+        x: currentX,
+        y: rowY - 2.5,
+        width: cellW,
+        height: 11.5,
+        color: isHeaderRow ? rgb(0.93, 0.95, 0.98) : undefined,
+        borderColor: isHeaderRow ? rgb(0.65, 0.75, 0.88) : rgb(0.85, 0.85, 0.88),
+        borderWidth: 0.5
+      });
+
       if (cellText) {
         // Calcular el ancho disponible sumando las celdas vacías consecutivas a la derecha
         let availableW = cellW;
@@ -429,7 +440,7 @@ async function renderReceiptSectionToPdfBuffer(worksheet, startRow, endRow, titl
         const truncated = cellText.length > maxChars ? cellText.substring(0, maxChars - 1) + '…' : cellText;
 
         page.drawText(truncated, {
-          x: currentX + 2,
+          x: currentX + 3,
           y: rowY,
           size: fontSize,
           font: currentFont,
@@ -458,14 +469,6 @@ async function renderReceiptSectionToPdfBuffer(worksheet, startRow, endRow, titl
     height: 40,
     borderColor: rgb(0.7, 0.7, 0.7),
     borderWidth: 0.5
-  });
-
-  page.drawText('FIRMA CONFORME EMPLEADO', {
-    x: 50,
-    y: signatureY + 5,
-    size: 7,
-    font: fontBold,
-    color: rgb(0.5, 0.5, 0.5)
   });
 
   const pdfBytes = await pdfDoc.save();
@@ -580,53 +583,6 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
     });
   }
 
-  // Texto de Auditoría Legal
-  const font = await pdfDoc.embedStandardFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedStandardFont(StandardFonts.HelveticaBold);
-  const textX = xPos + sigWidth + 12;
-
-  page.drawText('FIRMADO DIGITALMENTE', {
-    x: textX,
-    y: yPos + sigHeight - 2,
-    size: 7,
-    font: fontBold,
-    color: rgb(0.11, 0.56, 0.83)
-  });
-
-  page.drawText(`Firmante: ${metadata.name || 'Empleado'}`, {
-    x: textX,
-    y: yPos + sigHeight - 12,
-    size: 6.5,
-    font: font,
-    color: rgb(0.2, 0.2, 0.2)
-  });
-
-  page.drawText(`CUIL: ${metadata.cuil || 'N/D'}`, {
-    x: textX,
-    y: yPos + sigHeight - 21,
-    size: 6.5,
-    font: font,
-    color: rgb(0.2, 0.2, 0.2)
-  });
-
-  page.drawText(`Fecha: ${metadata.timestamp || new Date().toISOString()}`, {
-    x: textX,
-    y: yPos + sigHeight - 30,
-    size: 6,
-    font: font,
-    color: rgb(0.4, 0.4, 0.4)
-  });
-
-  page.drawText(`IP: ${metadata.ip || '127.0.0.1'}`, {
-    x: textX,
-    y: yPos + sigHeight - 38,
-    size: 6,
-    font: font,
-    color: rgb(0.4, 0.4, 0.4)
-  });
-
-  const signedBytes = await pdfDoc.save();
-  return Buffer.from(signedBytes);
 }
 
 module.exports = {
