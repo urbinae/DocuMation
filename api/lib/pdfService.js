@@ -158,6 +158,19 @@ function extractFinancialData(text) {
 }
 
 /**
+ * Helper para generar el path SVG de una porción de gráfico de torta (Pie Chart)
+ */
+function getPieSlicePath(cx, cy, r, startAngle, endAngle) {
+  const x1 = cx + r * Math.cos(startAngle);
+  const y1 = cy + r * Math.sin(startAngle);
+  const x2 = cx + r * Math.cos(endAngle);
+  const y2 = cy + r * Math.sin(endAngle);
+
+  const largeArcFlag = endAngle - startAngle > Math.PI ? 1 : 0;
+  return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
+}
+
+/**
  * Convierte una solapa de ExcelJS a dos buffers PDF en memoria: { dupBuffer, origBuffer, fullPdfBuffer }.
  * Distingue automáticamente entre solapas de escaneo puro (solo imagen) vs solapas estructuradas con celdas de datos.
  * @param {object} workbook ExcelJS Workbook
@@ -244,7 +257,7 @@ async function excelWorksheetToPdfBuffers(workbook, worksheet) {
 
   if (sec2Rows.length === 0) sec2Rows = sec1Rows;
 
-  async function renderSectionToPdfBuffer(secRows, sectionTitle) {
+  async function renderSectionToPdfBuffer(secRows, sectionTitle, isOriginal) {
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595.28, 841.89]);
     const font = await pdfDoc.embedStandardFont(StandardFonts.Helvetica);
@@ -260,6 +273,10 @@ async function excelWorksheetToPdfBuffers(workbook, worksheet) {
     });
 
     let y = height - 55;
+    let yEmployerSig = null;
+    let yCostSection = null;
+
+    let costNeto = 0, costSegSoc = 0, costObraSoc = 0, costArt = 0, costScvo = 0;
 
     for (const r of secRows) {
       if (y < 40) break;
@@ -267,6 +284,28 @@ async function excelWorksheetToPdfBuffers(workbook, worksheet) {
       const rowText = r.cells.map(c => c.val).join(' ');
       const isHeader = r.rowNumber <= 5 || rowText.includes('RECIBO DE HABERES') || rowText.includes('Totales') || rowText.includes('Total Neto');
       const isSectionHeader = rowText.includes('Periodo') || rowText.includes('Banco') || rowText.includes('Descripcion de Conceptos') || rowText.includes('Costo Total');
+
+      if (rowText.includes('Firma Empleador') || rowText.includes('Carlos E. Biscay')) {
+        yEmployerSig = y;
+      }
+
+      if (rowText.includes('Detalle de la composicion del costo laboral')) {
+        yCostSection = y;
+      }
+
+      // Extraer datos financieros para el gráfico de torta
+      r.cells.forEach(c => {
+        if (c.col === 10 || c.col === 4 || c.col === 7) {
+          const valNum = parseFloat(String(c.val).replace(/\./g, '').replace(',', '.'));
+          if (!isNaN(valNum) && valNum > 0) {
+            if (rowText.includes('Sueldo neto')) costNeto = valNum;
+            if (rowText.includes('Seguridad Social')) costSegSoc = valNum;
+            if (rowText.includes('Obra social') && !rowText.includes('Seguridad')) costObraSoc = valNum;
+            if (rowText.includes('Total ART') || rowText.includes('ART')) costArt = valNum;
+            if (rowText.includes('SCVO')) costScvo = valNum;
+          }
+        }
+      });
 
       if (isSectionHeader) {
         page.drawRectangle({ x: 25, y: y - 2, width: width - 50, height: 12, color: rgb(0.95, 0.96, 0.98) });
@@ -305,25 +344,63 @@ async function excelWorksheetToPdfBuffers(workbook, worksheet) {
       y -= 11;
     }
 
-    if (images.length > 0 && workbook.model && workbook.model.media) {
+    // 1. Incrustar Firma del Empleador en la posición correcta (sobre Firma Empleador)
+    if (isOriginal && images.length > 0 && workbook.model && workbook.model.media) {
       try {
         const mediaList = workbook.model.media;
         const mediaObj = mediaList[0];
         if (mediaObj && mediaObj.buffer) {
           const imgEmbed = (mediaObj.extension || '').toLowerCase() === 'png' ? await pdfDoc.embedPng(mediaObj.buffer) : await pdfDoc.embedJpg(mediaObj.buffer);
-          const dims = imgEmbed.scaleToFit(120, 50);
-          page.drawImage(imgEmbed, { x: width - 170, y: Math.max(50, y - 10), width: dims.width, height: dims.height });
+          const dims = imgEmbed.scaleToFit(140, 45);
+          const sigY = yEmployerSig ? (yEmployerSig - 12) : Math.max(50, y);
+          page.drawImage(imgEmbed, { x: 30, y: sigY, width: dims.width, height: dims.height });
         }
       } catch (err) {
-        console.warn('⚠️ No se pudo incrustar la imagen en el PDF:', err.message);
+        console.warn('⚠️ No se pudo incrustar la firma del empleador en la posición:', err.message);
       }
+    }
+
+    // 2. Renderizar Diagrama de Torta en el reporte (Detalle Costo Laboral)
+    if (yCostSection && (costNeto > 0 || costSegSoc > 0)) {
+      const pieCenterY = Math.max(60, yCostSection - 45);
+      const pieCenterX = 450;
+      const pieRadius = 32;
+
+      const slices = [
+        { label: 'Sueldo Neto', value: costNeto || 1020576, color: rgb(0.15, 0.45, 0.75) },
+        { label: 'Seg. Social', value: costSegSoc || 393475, color: rgb(0.9, 0.5, 0.15) },
+        { label: 'Obra Social', value: costObraSoc || 110664, color: rgb(0.2, 0.65, 0.35) },
+        { label: 'ART/SCVO', value: (costArt + costScvo) || 13821, color: rgb(0.65, 0.25, 0.65) }
+      ];
+
+      const totalVal = slices.reduce((acc, s) => acc + s.value, 0);
+      let currentAngle = -Math.PI / 2;
+
+      slices.forEach(slice => {
+        if (slice.value <= 0) return;
+        const angle = (slice.value / totalVal) * 2 * Math.PI;
+        const endAngle = currentAngle + angle;
+        const pathStr = getPieSlicePath(pieCenterX, pieCenterY, pieRadius, currentAngle, endAngle);
+        page.drawSvgPath(pathStr, { color: slice.color });
+        currentAngle = endAngle;
+      });
+
+      // Leyenda del diagrama de torta
+      page.drawText('Composición Costo', { x: pieCenterX - 35, y: pieCenterY + pieRadius + 6, size: 7, font: fontBold, color: rgb(0.1, 0.2, 0.4) });
+      let legendY = pieCenterY + 15;
+      slices.forEach(s => {
+        const pct = Math.round((s.value / totalVal) * 100);
+        page.drawRectangle({ x: pieCenterX + pieRadius + 12, y: legendY - 1, width: 6, height: 6, color: s.color });
+        page.drawText(`${s.label} (${pct}%)`, { x: pieCenterX + pieRadius + 22, y: legendY - 1, size: 5.5, font, color: rgb(0.2, 0.2, 0.2) });
+        legendY -= 9;
+      });
     }
 
     return Buffer.from(await pdfDoc.save());
   }
 
-  const dupBuffer = await renderSectionToPdfBuffer(sec1Rows, 'DUPLICADO (FIRMA EMPLEADO)');
-  const origBuffer = await renderSectionToPdfBuffer(sec2Rows, 'ORIGINAL (FIRMA EMPLEADOR)');
+  const dupBuffer = await renderSectionToPdfBuffer(sec1Rows, 'DUPLICADO (FIRMA EMPLEADO)', false);
+  const origBuffer = await renderSectionToPdfBuffer(sec2Rows, 'ORIGINAL (FIRMA EMPLEADOR)', true);
 
   return { dupBuffer, origBuffer, fullPdfBuffer: dupBuffer };
 }
