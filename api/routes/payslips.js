@@ -276,196 +276,243 @@ router.post('/upload', fileUploadMiddleware, async (req, res) => {
 
 /**
  * POST /api/payslips/upload-excel
- * Carga masiva de Excel (.xlsx) con procesamiento en memoria y split geométrico
+ * Carga masiva desde Excel (.xls y .xlsx) usando exceljs de forma nativa para Vercel (Buffers en memoria).
+ * Soporta hojas con imágenes embebidas de recibos o solapas con celdas de texto.
  */
 router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
   try {
     if (!req.file || !req.file.buffer) {
-      return res.status(400).json({ error: 'Debe adjuntar un archivo Excel (.xlsx) en la petición (campo "file" o "excel")' });
+      return res.status(400).json({ error: "No se subió ningún archivo Excel" });
+    }
+    const { month, jobId } = req.body;
+    if (!month) {
+      return res.status(400).json({ error: "El período (month) es requerido (ej: '2026-05')" });
     }
 
-    const month = req.body.month || new Date().toISOString().substring(0, 7);
+    console.log(`[EXCEL] Upload start. month=${month}, jobId=${jobId || 'N/A'}`);
+
+    const summary = {
+      total: 0,
+      successCount: 0,
+      failCount: 0,
+      skippedCount: 0,
+      errors: []
+    };
+
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(req.file.buffer);
 
-    let totalSheets = 0;
-    let processedCount = 0;
-    let skippedCount = 0;
-    const errors = [];
     const excludedSheets = ['RESUMEN', 'SICOSS', 'MODELO', 'CUSS', 'HOJA6', 'HOJA 6', 'PARAMETROS'];
+    const validWorksheets = workbook.worksheets.filter(ws => {
+      const nameUpper = ws.name.toUpperCase().trim();
+      return ws.state !== 'hidden' && !excludedSheets.includes(nameUpper);
+    });
 
-    const { data: allEmployees } = await supabase
+    summary.total = validWorksheets.length;
+
+    if (jobId) {
+      if (!global.excelProgress) global.excelProgress = {};
+      global.excelProgress[jobId] = { current: 0, total: summary.total };
+    }
+
+    const { data: allEmployees, error: empErr } = await supabase
       .from('employees')
-      .select('id, cuil, name');
+      .select('id, cuil, name, email');
+    if (empErr) throw empErr;
 
-    for (const worksheet of workbook.worksheets) {
-      const sheetNameUpper = worksheet.name.toUpperCase().trim();
-      if (worksheet.state === 'hidden' || excludedSheets.includes(sheetNameUpper)) {
-        continue;
-      }
+    const { data: allPayslips, error: payErr } = await supabase
+      .from('payslips')
+      .select('id, employee_id, month, original_hash, duplicado_hash, original_storage_path, duplicado_storage_path');
+    if (payErr) throw payErr;
 
-      totalSheets++;
+    for (let i = 0; i < validWorksheets.length; i++) {
+      const worksheet = validWorksheets[i];
+      const sheetName = worksheet.name.trim();
 
-      // 1. Generación de PDF A4 en memoria a partir de la solapa de Excel
-      const sheetPdfBuffer = await pdfService.excelToPdfBuffer(worksheet);
+      try {
+        // Generar buffers de PDF (Duplicado y Original) desde la solapa
+        const sheetBuffers = await pdfService.excelWorksheetToPdfBuffers(workbook, worksheet);
+        origBytes = sheetBuffers.origBuffer;
+        dupBytes = sheetBuffers.dupBuffer;
+        fileHash = pdfService.getBufferHash(dupBytes);
 
-      // 2. Extraer texto completo de las celdas de la solapa de Excel
-      let worksheetText = '';
-      worksheet.eachRow((row) => {
-        row.eachCell((cell) => {
-          let val = '';
-          if (cell.value != null) {
-            if (cell.text != null && cell.text !== '') val = String(cell.text);
-            else if (typeof cell.value === 'object') {
-              if (cell.value.result != null) val = String(cell.value.result);
-              else if (Array.isArray(cell.value.richText)) val = cell.value.richText.map(rt => rt.text || '').join('');
-              else if (cell.value.text != null) val = String(cell.value.text);
-              else val = String(cell.value);
-            } else val = String(cell.value);
+        // Extraer texto de celdas y analizar metadatos/CUIL
+        let worksheetText = '';
+        worksheet.eachRow((row) => {
+          row.eachCell((cell) => {
+            let val = cell.value;
+            if (val != null) {
+              if (typeof val === 'object') val = val.result || val.text || '';
+              val = String(val).trim();
+              if (val) worksheetText += val + ' ';
+            }
+          });
+        });
+
+        analysis = await pdfService.analyzeBuffer(sheetBuffers.fullPdfBuffer, sheetName);
+        const fullTextToScan = `${analysis.text || ''} ${worksheetText}`;
+
+        // Recopilar CUILs válidos
+        const foundCuils = [];
+        const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
+        let match;
+        while ((match = cuilRegex.exec(fullTextToScan)) !== null) {
+          const cleanMatch = (match[1] || match[0]).replace(/\D/g, '');
+          if (pdfService.isValidCUIL(cleanMatch) && !foundCuils.includes(cleanMatch)) {
+            foundCuils.push(cleanMatch);
           }
-          if (val.trim()) worksheetText += val.trim() + ' ';
-        });
-      });
-
-      let analysis = await pdfService.analyzeBuffer(sheetPdfBuffer, worksheet.name);
-
-      // Recopilar todos los CUILs únicos encontrados (del PDF y del texto de Excel)
-      const foundCuils = [];
-      const cuilRegex = /(?:CUIL|CUIT)?\s*[:.-]?\s*(\d{2}[-.\s]?\d{8}[-.\s]?\d{1}|\d{11})/gi;
-
-      const fullTextToScan = `${analysis.text || ''} ${worksheetText}`;
-      let match;
-      while ((match = cuilRegex.exec(fullTextToScan)) !== null) {
-        const cleanMatch = (match[1] || match[0]).replace(/\D/g, '');
-        if (pdfService.isValidCUIL(cleanMatch) && !foundCuils.includes(cleanMatch)) {
-          foundCuils.push(cleanMatch);
         }
-      }
-
-      // 3. Matcheo con Empleado en Base de Datos
-      let employee = null;
-      let matchedCuil = null;
-
-      // a) Primero buscar si alguno de los CUILs encontrados pertenece a un empleado
-      for (const cuilCandidate of foundCuils) {
-        const candidateFormatted = pdfService.formatCUIL(cuilCandidate);
-        const emp = (allEmployees || []).find(e => {
-          const empClean = String(e.cuil || '').replace(/\D/g, '');
-          return empClean === cuilCandidate || e.cuil === cuilCandidate || e.cuil === candidateFormatted;
-        });
-
-        if (emp) {
-          employee = emp;
-          matchedCuil = cuilCandidate;
-          break;
+        if (foundCuils.length > 0 && !analysis.cuil) {
+          analysis.cuil = foundCuils[0];
         }
-      }
 
-      // b) Si no matcheó por CUIL (ej. los CUILs escaneados eran de la empresa o no estaban en BD), intentar por Nombre (Worksheet name)
-      if (!employee) {
-        const sheetClean = worksheet.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        employee = (allEmployees || []).find(e => {
-          const empNameClean = (e.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-          return sheetClean.includes(empNameClean) || empNameClean.includes(sheetClean);
-        });
-        if (employee) {
-          matchedCuil = String(employee.cuil || '').replace(/\D/g, '');
+        // Matcheo de empleado por CUILs detectados o Nombre de solapa
+        let employeeId = null;
+        let detectedCuil = analysis.cuil;
+        let matchedEmp = null;
+
+        for (const c of foundCuils) {
+          const cleanC = String(c).replace(/\D/g, '');
+          const emp = (allEmployees || []).find(e => {
+            const empClean = String(e.cuil || '').replace(/\D/g, '');
+            return empClean === cleanC;
+          });
+          if (emp) {
+            matchedEmp = emp;
+            employeeId = emp.id;
+            detectedCuil = cleanC;
+            break;
+          }
         }
+
+        // Fallback: Si no se detectó CUIL que matchee, emparejar por el nombre de la solapa con el empleado
+        if (!employeeId) {
+          const sheetClean = sheetName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+          matchedEmp = (allEmployees || []).find(e => {
+            const empNameClean = (e.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            return sheetClean.includes(empNameClean) || empNameClean.includes(sheetClean);
+          });
+          if (matchedEmp) {
+            employeeId = matchedEmp.id;
+            detectedCuil = String(matchedEmp.cuil || '').replace(/\D/g, '');
+            console.log(`[EXCEL] Solapa "${sheetName}": Empleado emparejado por nombre (Fallback OCR) -> ${matchedEmp.name}`);
+          }
+        }
+
+        if (!employeeId) {
+          summary.failCount++;
+          summary.errors.push(`Solapa "${sheetName}": No se subió porque no se detectó el CUIT por OCR ni se encontró empleado con ese nombre.`);
+          continue;
+        }
+
+        // Comprobar duplicado global por hash
+        if (fileHash) {
+          const isDuplicate = (allPayslips || []).some(p =>
+            p.original_hash === fileHash || p.duplicado_hash === fileHash
+          );
+          if (isDuplicate) {
+            summary.errors.push(`Solapa "${sheetName}": El recibo exacto ya fue subido (Duplicado global).`);
+            summary.skippedCount++;
+            continue;
+          }
+        }
+
+        // Comprobar si ya existe un recibo completo para este empleado y mes
+        const existingRecord = (allPayslips || []).find(
+          p => (p.employee_id === employeeId || p.detected_cuil === detectedCuil) && p.month === month
+        );
+
+        if (existingRecord && existingRecord.original_storage_path && existingRecord.duplicado_storage_path) {
+          summary.skippedCount++;
+          summary.errors.push(`Solapa "${sheetName}": Se omitió porque ya existe un recibo cargado para este empleado en el período ${month}.`);
+          continue;
+        }
+
+        const origHash = pdfService.getBufferHash(origBytes);
+        const dupHash = pdfService.getBufferHash(dupBytes);
+        const cleanSheetName = pdfService.sanitizeFileName(matchedEmp ? matchedEmp.name : sheetName);
+
+        const origFilename = `${uuidv4()}_${cleanSheetName}_original.pdf`;
+        const dupFilename = `${uuidv4()}_${cleanSheetName}_duplicado.pdf`;
+
+        const origStoragePath = `originals/${origFilename}`;
+        const dupStoragePath = `duplicados/${dupFilename}`;
+
+        // Subida de Buffers a Supabase Storage
+        const [origUpload, dupUpload] = await Promise.all([
+          supabase.storage.from('payslips').upload(origStoragePath, origBytes, { contentType: 'application/pdf', upsert: true }),
+          supabase.storage.from('payslips').upload(dupStoragePath, dupBytes, { contentType: 'application/pdf', upsert: true })
+        ]);
+
+        if (origUpload.error || dupUpload.error) {
+          summary.failCount++;
+          summary.errors.push(`Solapa "${sheetName}": Error subiendo archivos a Storage: ${origUpload.error?.message || dupUpload.error?.message}`);
+          continue;
+        }
+
+        // Guardar o actualizar registro en Postgres DB via Supabase
+        if (existingRecord) {
+          await supabase
+            .from('payslips')
+            .update({
+              original_storage_path: origStoragePath,
+              duplicado_storage_path: dupStoragePath,
+              original_hash: origHash,
+              duplicado_hash: dupHash,
+              status: 'Cargado',
+              financial_data: analysis.financialData || existingRecord.financial_data,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingRecord.id);
+        } else {
+          await supabase
+            .from('payslips')
+            .insert([{
+              employee_id: employeeId,
+              detected_cuil: detectedCuil,
+              month,
+              original_storage_path: origStoragePath,
+              duplicado_storage_path: dupStoragePath,
+              original_hash: origHash,
+              duplicado_hash: dupHash,
+              status: 'Cargado',
+              token: uuidv4(),
+              financial_data: analysis.financialData
+            }]);
+        }
+
+        summary.successCount++;
+
+      } catch (err) {
+        summary.failCount++;
+        summary.errors.push(`Error procesando solapa "${sheetName}": ${err.message}`);
       }
 
-      if (!employee) {
-        const reportedCuil = foundCuils.length > 0 ? foundCuils.join(', ') : 'no detectado';
-        errors.push({ sheet: worksheet.name, cuil: reportedCuil, error: `No se encontró un empleado registrado para la hoja '${worksheet.name}' (CUILs en hoja: ${reportedCuil})` });
-        continue;
+      if (jobId && global.excelProgress) {
+        global.excelProgress[jobId].current = i + 1;
       }
+    }
 
-      analysis.cuil = matchedCuil || String(employee.cuil || '').replace(/\D/g, '');
-      analysis.formattedCuil = pdfService.formatCUIL(analysis.cuil);
-
-      // 4. Verificación de existencia de recibo completo para el mes
-      const { data: existingPayslip } = await supabase
-        .from('payslips')
-        .select('*')
-        .eq('employee_id', employee.id)
-        .eq('month', month)
-        .maybeSingle();
-
-      if (existingPayslip && existingPayslip.original_storage_path && existingPayslip.duplicado_storage_path) {
-        skippedCount++;
-        continue;
-      }
-
-      // 5. División Geométrica con pdf-lib (Mitad Superior: Duplicado / Mitad Inferior: Original)
-      const { origBuffer, dupBuffer } = await pdfService.splitPdfBuffer(sheetPdfBuffer);
-      const origHash = pdfService.getBufferHash(origBuffer);
-      const dupHash = pdfService.getBufferHash(dupBuffer);
-
-      // 6. Subida de Buffers a Supabase Storage
-      const cleanSheetName = pdfService.sanitizeFileName(worksheet.name);
-      const origStoragePath = `originals/${uuidv4()}_${cleanSheetName}_original.pdf`;
-      const dupStoragePath = `duplicados/${uuidv4()}_${cleanSheetName}_duplicado.pdf`;
-
-      const [origUpload, dupUpload] = await Promise.all([
-        supabase.storage.from('payslips').upload(origStoragePath, origBuffer, { contentType: 'application/pdf', upsert: true }),
-        supabase.storage.from('payslips').upload(dupStoragePath, dupBuffer, { contentType: 'application/pdf', upsert: true })
-      ]);
-
-      if (origUpload.error || dupUpload.error) {
-        errors.push({ sheet: worksheet.name, error: `Error subiendo archivos a Storage: ${origUpload.error?.message || dupUpload.error?.message}` });
-        continue;
-      }
-
-      // 7. Guardar/Actualizar en Base de Datos PostgreSQL
-      if (existingPayslip) {
-        await supabase
-          .from('payslips')
-          .update({
-            original_storage_path: origStoragePath,
-            duplicado_storage_path: dupStoragePath,
-            original_hash: origHash,
-            duplicado_hash: dupHash,
-            status: 'Cargado'
-          })
-          .eq('id', existingPayslip.id);
-      } else {
-        await supabase
-          .from('payslips')
-          .insert([{
-            employee_id: employee.id,
-            detected_cuil: analysis.cuil,
-            month,
-            original_storage_path: origStoragePath,
-            duplicado_storage_path: dupStoragePath,
-            original_hash: origHash,
-            duplicado_hash: dupHash,
-            status: 'Cargado',
-            token: uuidv4(),
-            financial_data: analysis.financialData
-          }]);
-      }
-
-      processedCount++;
+    if (jobId && global.excelProgress) {
+      delete global.excelProgress[jobId];
     }
 
     res.json({
       success: true,
-      message: 'Ingesta de Excel procesada correctamente',
-      total: totalSheets,
-      successCount: processedCount,
-      skippedCount,
-      failCount: errors.length,
-      errors,
-      summary: {
-        totalSheets,
-        processedCount,
-        skippedCount,
-        errors
-      }
+      message: 'Subida masiva procesada correctamente',
+      total: summary.total,
+      successCount: summary.successCount,
+      failCount: summary.failCount,
+      skippedCount: summary.skippedCount,
+      errors: summary.errors,
+      summary
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Error en ingesta masiva de Excel', details: err.message });
+  } catch (error) {
+    console.error("Error en la subida Excel:", error);
+    res.status(500).json({ error: error.message });
   }
 });
+
 
 /**
  * Handler genérico para firma de recibo por Token o ID

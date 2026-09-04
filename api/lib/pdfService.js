@@ -158,115 +158,182 @@ function extractFinancialData(text) {
 }
 
 /**
- * Convierte una solapa de ExcelJS a un Buffer de PDF A4 en memoria usando pdf-lib.
- * Genera ambas mitades (Duplicado arriba / Original abajo) para posibilitar el split geométrico.
+ * Convierte una solapa de ExcelJS a dos buffers PDF en memoria: { dupBuffer, origBuffer, fullPdfBuffer }.
+ * Distingue automáticamente entre solapas de escaneo puro (solo imagen) vs solapas estructuradas con celdas de datos.
+ * @param {object} workbook ExcelJS Workbook
  * @param {object} worksheet ExcelJS Worksheet
- * @returns {Promise<Buffer>}
+ * @returns {Promise<{ dupBuffer: Buffer, origBuffer: Buffer, fullPdfBuffer: Buffer }>}
  */
-async function excelToPdfBuffer(worksheet) {
-  const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([595.28, 841.89]); // Tamaño A4 estándar en puntos (72 DPI)
-  const font = await pdfDoc.embedStandardFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedStandardFont(StandardFonts.HelveticaBold);
+async function excelWorksheetToPdfBuffers(workbook, worksheet) {
+  const images = worksheet.getImages ? worksheet.getImages() : [];
+  let cellRowCount = 0;
+  worksheet.eachRow((row) => {
+    let hasVal = false;
+    row.eachCell(c => { if (c.value != null && String(c.value).trim()) hasVal = true; });
+    if (hasVal) cellRowCount++;
+  });
 
-  const { width, height } = page.getSize();
-  const halfHeight = height / 2;
-
-  // Dibujar plantilla de visualización para ambas secciones
-  const renderSection = (yOffset, sectionTitle) => {
-    // Encabezado de Sección
-    page.drawText(`RECIBO DE SUELDO - ${sectionTitle}`, {
-      x: 40,
-      y: yOffset - 30,
-      size: 12,
-      font: fontBold,
-      color: rgb(0.1, 0.3, 0.6)
+  // CASO 1: Solapa de escaneo puro (sin datos en celdas, solo imagen pegada)
+  if (cellRowCount < 5 && images.length > 0) {
+    const mediaList = (workbook.model && workbook.model.media) ? workbook.model.media : [];
+    images.sort((a, b) => {
+      const rA = a.range?.tl?.nativeRow ?? a.range?.tl?.row ?? 0;
+      const rB = b.range?.tl?.nativeRow ?? b.range?.tl?.row ?? 0;
+      return rA - rB;
     });
 
-    page.drawLine({
-      start: { x: 40, y: yOffset - 35 },
-      end: { x: width - 40, y: yOffset - 35 },
-      thickness: 1,
-      color: rgb(0.7, 0.7, 0.7)
-    });
-  };
+    const firstImgRef = images[0];
+    const firstImgData = mediaList.find(m => String(m.index) === String(firstImgRef.imageId) || m.index == firstImgRef.imageId);
 
-  // Sección Duplicado (Mitad Superior)
-  renderSection(height, 'DUPLICADO (FIRMA EMPLEADO)');
-  // Sección Original (Mitad Inferior)
-  renderSection(halfHeight, 'ORIGINAL (FIRMA EMPLEADOR)');
+    if (images.length >= 2) {
+      const topImgData = mediaList.find(m => String(m.index) === String(images[0].imageId) || m.index == images[0].imageId) || firstImgData;
+      const botImgData = mediaList.find(m => String(m.index) === String(images[1].imageId) || m.index == images[1].imageId) || firstImgData;
 
-  // Extraer celdas y distribuirlas en las dos mitades
-  let rowCount = 0;
+      const dupDoc = await PDFDocument.create();
+      const pageD = dupDoc.addPage([595.28, 420.94]);
+      const imgD = (topImgData.extension || '').toLowerCase() === 'png' ? await dupDoc.embedPng(topImgData.buffer) : await dupDoc.embedJpg(topImgData.buffer);
+      const dimsD = imgD.scaleToFit(555, 380);
+      pageD.drawImage(imgD, { x: (595.28 - dimsD.width) / 2, y: (420.94 - dimsD.height) / 2, width: dimsD.width, height: dimsD.height });
+
+      const origDoc = await PDFDocument.create();
+      const pageO = origDoc.addPage([595.28, 420.94]);
+      const imgO = (botImgData.extension || '').toLowerCase() === 'png' ? await origDoc.embedPng(botImgData.buffer) : await origDoc.embedJpg(botImgData.buffer);
+      const dimsO = imgO.scaleToFit(555, 380);
+      pageO.drawImage(imgO, { x: (595.28 - dimsO.width) / 2, y: (420.94 - dimsO.height) / 2, width: dimsO.width, height: dimsO.height });
+
+      const dupBuffer = Buffer.from(await dupDoc.save());
+      const origBuffer = Buffer.from(await origDoc.save());
+      return { dupBuffer, origBuffer, fullPdfBuffer: dupBuffer };
+    } else {
+      const doc = await PDFDocument.create();
+      const page = doc.addPage([595.28, 841.89]);
+      const img = (firstImgData.extension || '').toLowerCase() === 'png' ? await doc.embedPng(firstImgData.buffer) : await doc.embedJpg(firstImgData.buffer);
+      const dims = img.scaleToFit(555, 800);
+      page.drawImage(img, { x: (595.28 - dims.width) / 2, y: (841.89 - dims.height) / 2, width: dims.width, height: dims.height });
+      const fullBytes = await doc.save();
+      const fullPdfBuffer = Buffer.from(fullBytes);
+
+      const splitResult = await splitPdfBuffer(fullPdfBuffer);
+      return { dupBuffer: splitResult.dupBuffer, origBuffer: splitResult.origBuffer, fullPdfBuffer };
+    }
+  }
+
+  // CASO 2: Solapa estructurada con celdas de datos (ej: Recibos Sueldos -para prueba.xls.xlsx)
+  let sec1Rows = [];
+  let sec2Rows = [];
+
   worksheet.eachRow((row, rowNumber) => {
-    if (rowCount > 25) return; // Limitar filas por solapa A4
-
-    const rowYTop = height - 50 - (rowNumber * 14);
-    const rowYBottom = halfHeight - 50 - (rowNumber * 14);
-
-    let rowText = '';
-    row.eachCell((cell) => {
+    let cells = [];
+    row.eachCell({ includeEmpty: false }, (c, colNumber) => {
       let val = '';
-      if (cell.value != null) {
-        if (cell.text != null && cell.text !== '') {
-          val = String(cell.text);
-        } else if (typeof cell.value === 'object') {
-          if (cell.value.result != null) {
-            val = String(cell.value.result);
-          } else if (Array.isArray(cell.value.richText)) {
-            val = cell.value.richText.map(rt => rt.text || '').join('');
-          } else if (cell.value.text != null) {
-            val = String(cell.value.text);
-          } else {
-            val = String(cell.value);
-          }
+      if (c.value != null) {
+        if (typeof c.value === 'object') {
+          val = c.value.result != null ? c.value.result : (c.value.text || '');
         } else {
-          val = String(cell.value);
+          val = String(c.value);
         }
       }
-      if (val.trim()) {
-        rowText += val.trim() + '  ';
-      }
+      val = String(val).trim();
+      if (val) cells.push({ col: colNumber, val });
+    });
+    if (cells.length > 0) {
+      if (rowNumber < 78) sec1Rows.push({ rowNumber, cells });
+      else sec2Rows.push({ rowNumber, cells });
+    }
+  });
+
+  if (sec2Rows.length === 0) sec2Rows = sec1Rows;
+
+  async function renderSectionToPdfBuffer(secRows, sectionTitle) {
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595.28, 841.89]);
+    const font = await pdfDoc.embedStandardFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedStandardFont(StandardFonts.HelveticaBold);
+    const { width, height } = page.getSize();
+
+    page.drawRectangle({
+      x: 25, y: height - 40, width: width - 50, height: 26,
+      color: rgb(0.92, 0.95, 0.98), borderColor: rgb(0.7, 0.8, 0.9), borderWidth: 1
+    });
+    page.drawText(`RECIBO DE HABERES - ${sectionTitle}`, {
+      x: 35, y: height - 32, size: 10, font: fontBold, color: rgb(0.1, 0.3, 0.6)
     });
 
-    if (rowText.trim()) {
-      const isHeader = rowNumber <= 3;
-      const currentFont = isHeader ? fontBold : font;
-      const fontSize = 8;
+    let y = height - 55;
 
-      if (rowYTop > halfHeight + 15) {
-        page.drawText(rowText.substring(0, 110), {
-          x: 40,
-          y: rowYTop,
-          size: fontSize,
-          font: currentFont,
-          color: rgb(0.15, 0.15, 0.15)
+    for (const r of secRows) {
+      if (y < 40) break;
+
+      const rowText = r.cells.map(c => c.val).join(' ');
+      const isHeader = r.rowNumber <= 5 || rowText.includes('RECIBO DE HABERES') || rowText.includes('Totales') || rowText.includes('Total Neto');
+      const isSectionHeader = rowText.includes('Periodo') || rowText.includes('Banco') || rowText.includes('Descripcion de Conceptos') || rowText.includes('Costo Total');
+
+      if (isSectionHeader) {
+        page.drawRectangle({ x: 25, y: y - 2, width: width - 50, height: 12, color: rgb(0.95, 0.96, 0.98) });
+      }
+
+      for (const c of r.cells) {
+        let x = 30;
+        if (c.col === 2) x = 30;
+        else if (c.col === 3) x = 160;
+        else if (c.col === 4) x = 240;
+        else if (c.col === 5) x = 310;
+        else if (c.col === 6) x = 390;
+        else if (c.col === 7) x = 480;
+        else x = 30 + (c.col - 1) * 60;
+
+        let str = c.val;
+        let maxLen = (c.col === 2) ? 40 : 22;
+        if (str.length > maxLen) str = str.substring(0, maxLen) + '...';
+
+        if (typeof c.val === 'number' || (!isNaN(c.val) && c.val.includes('.'))) {
+          const num = parseFloat(c.val);
+          if (!isNaN(num) && num > 100) {
+            str = num.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          }
+        }
+
+        page.drawText(str, {
+          x: Math.min(x, 505),
+          y,
+          size: isHeader ? 7.5 : 6.5,
+          font: (isHeader || isSectionHeader) ? fontBold : font,
+          color: isHeader ? rgb(0.05, 0.2, 0.5) : rgb(0.15, 0.15, 0.15)
         });
       }
 
-      if (rowYBottom > 15) {
-        page.drawText(rowText.substring(0, 110), {
-          x: 40,
-          y: rowYBottom,
-          size: fontSize,
-          font: currentFont,
-          color: rgb(0.15, 0.15, 0.15)
-        });
+      y -= 11;
+    }
+
+    if (images.length > 0 && workbook.model && workbook.model.media) {
+      try {
+        const mediaList = workbook.model.media;
+        const mediaObj = mediaList[0];
+        if (mediaObj && mediaObj.buffer) {
+          const imgEmbed = (mediaObj.extension || '').toLowerCase() === 'png' ? await pdfDoc.embedPng(mediaObj.buffer) : await pdfDoc.embedJpg(mediaObj.buffer);
+          const dims = imgEmbed.scaleToFit(120, 50);
+          page.drawImage(imgEmbed, { x: width - 170, y: Math.max(50, y - 10), width: dims.width, height: dims.height });
+        }
+      } catch (err) {
+        console.warn('⚠️ No se pudo incrustar la imagen en el PDF:', err.message);
       }
     }
-    rowCount++;
-  });
 
-  // Línea divisoria central
-  page.drawLine({
-    start: { x: 20, y: halfHeight },
-    end: { x: width - 20, y: halfHeight },
-    thickness: 1,
-    color: rgb(0.5, 0.5, 0.5)
-  });
+    return Buffer.from(await pdfDoc.save());
+  }
 
-  const pdfBytes = await pdfDoc.save();
-  return Buffer.from(pdfBytes);
+  const dupBuffer = await renderSectionToPdfBuffer(sec1Rows, 'DUPLICADO (FIRMA EMPLEADO)');
+  const origBuffer = await renderSectionToPdfBuffer(sec2Rows, 'ORIGINAL (FIRMA EMPLEADOR)');
+
+  return { dupBuffer, origBuffer, fullPdfBuffer: dupBuffer };
+}
+
+/**
+ * Legacy helper para compatibilidad: convierte worksheet a Buffer A4
+ */
+async function excelToPdfBuffer(worksheet) {
+  const result = await excelWorksheetToPdfBuffers(null, worksheet);
+  return result.fullPdfBuffer;
 }
 
 /**
@@ -413,6 +480,45 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
   return Buffer.from(signedBytes);
 }
 
+/**
+ * Crea un Buffer PDF a partir de una imagen (Buffer de PNG o JPG)
+ * @param {object} imgData { buffer: Buffer, extension: string }
+ * @param {Array<number>} pageDimensions [width, height], por defecto A4 [595.28, 841.89]
+ * @returns {Promise<Buffer>} Buffer del PDF generado
+ */
+async function buildPdfWithImage(imgData, pageDimensions = [595.28, 841.89]) {
+  if (!imgData || !imgData.buffer) {
+    throw new Error("No se proporcionó información de imagen válida.");
+  }
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage(pageDimensions);
+  let pdfImg;
+  const ext = String(imgData.extension || '').toLowerCase();
+
+  if (ext === 'png') {
+    pdfImg = await pdfDoc.embedPng(imgData.buffer);
+  } else if (ext === 'jpeg' || ext === 'jpg') {
+    pdfImg = await pdfDoc.embedJpg(imgData.buffer);
+  } else {
+    try {
+      pdfImg = await pdfDoc.embedPng(imgData.buffer);
+    } catch {
+      pdfImg = await pdfDoc.embedJpg(imgData.buffer);
+    }
+  }
+
+  const dims = pdfImg.scaleToFit(page.getWidth() - 40, page.getHeight() - 40);
+  page.drawImage(pdfImg, {
+    x: (page.getWidth() - dims.width) / 2,
+    y: (page.getHeight() - dims.height) / 2,
+    width: dims.width,
+    height: dims.height
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
+}
+
 module.exports = {
   isValidCUIL,
   formatCUIL,
@@ -421,6 +527,9 @@ module.exports = {
   analyzeBuffer,
   extractFinancialData,
   excelToPdfBuffer,
+  excelWorksheetToPdfBuffers,
   splitPdfBuffer,
-  signPdfBuffer
+  signPdfBuffer,
+  buildPdfWithImage
 };
+
