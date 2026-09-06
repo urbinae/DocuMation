@@ -583,6 +583,9 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
     });
   }
 
+  // Importante para Vercel/Serverless: devolver el PDF en memoria.
+  // Sin este retorno, la función termina sin producir un Buffer útil.
+  return Buffer.from(await pdfDoc.save());
 }
 
 module.exports = {
