@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import { PDFDocument } from 'pdf-lib';
 import * as XLSX from 'xlsx';
 import bcrypt from 'bcryptjs';
 import { supabaseAdmin } from '../config/supabase.js';
@@ -62,36 +61,14 @@ export const extractCuilFromText = (text) => {
  * Divide una página A4 en Mitad Inferior (Original) y Mitad Superior (Duplicado)
  */
 export const splitPdfOriginalDuplicado = async (pdfBuffer) => {
-  try {
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const pages = pdfDoc.getPages();
-    if (pages.length === 0) return { originalBuffer: pdfBuffer, duplicadoBuffer: pdfBuffer };
-
-    const firstPage = pages[0];
-    const { width, height } = firstPage.getSize();
-    const halfHeight = height / 2;
-
-    // Original (Mitad Inferior: 0 a halfHeight)
-    const origDoc = await PDFDocument.create();
-    const [origPage] = await origDoc.copyPages(pdfDoc, [0]);
-    origPage.setCropBox(0, 0, width, halfHeight);
-    origPage.setMediaBox(0, 0, width, halfHeight);
-    origDoc.addPage(origPage);
-    const originalBuffer = Buffer.from(await origDoc.save());
-
-    // Duplicado (Mitad Superior: halfHeight a height)
-    const dupDoc = await PDFDocument.create();
-    const [dupPage] = await dupDoc.copyPages(pdfDoc, [0]);
-    dupPage.setCropBox(0, halfHeight, width, halfHeight);
-    dupPage.setMediaBox(0, halfHeight, width, halfHeight);
-    dupDoc.addPage(dupPage);
-    const duplicadoBuffer = Buffer.from(await dupDoc.save());
-
-    return { originalBuffer, duplicadoBuffer };
-  } catch (err) {
-    console.warn('[PDF Split Warning]: No se pudo cortar la página con pdf-lib:', err.message);
+  if (!pdfBuffer) {
     return { originalBuffer: pdfBuffer, duplicadoBuffer: pdfBuffer };
   }
+
+  return {
+    originalBuffer: Buffer.from(pdfBuffer),
+    duplicadoBuffer: Buffer.from(pdfBuffer)
+  };
 };
 
 /**
