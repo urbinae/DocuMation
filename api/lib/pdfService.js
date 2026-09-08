@@ -1,26 +1,33 @@
 const pdfParse = require('pdf-parse');
 const crypto = require('crypto');
+const AdmZip = require('adm-zip');
 
 /**
- * Genera un PDF de recibo delegando en el microservicio externo configurado
- * para Vercel. La plantilla maestra se procesa fuera del runtime serverless
- * usando LibreOffice + OpenPyXL, evitando la dependencia de pdf-lib.
- * @param {object} payload
- * @returns {Promise<Buffer>} PDF generado por el servicio externo
+ * Envía el Excel COMPLETO (multipart/form-data: file + month) al microservicio
+ * externo de generación de recibos (LibreOffice + UNO). El microservicio ya
+ * exporta, por cada hoja válida, un PDF "Original" y un PDF "Duplicado" según
+ * los rangos de celda fijos, y devuelve todo empaquetado en un .zip junto a un
+ * manifest.json con la metadata { sheet, type, range, file }.
+ *
+ * @param {Buffer} fileBuffer contenido del .xlsx subido por el usuario
+ * @param {string} month formato YYYY-MM
+ * @param {string} [originalFilename]
+ * @returns {Promise<{ bySheet: Object<string, { Original?: Buffer, Duplicado?: Buffer }>, manifest: object }>}
  */
-async function generatePayslipPdfFromData(payload = {}) {
+async function generatePayslipsZipFromExcel(fileBuffer, month, originalFilename = 'planilla.xlsx') {
   const baseUrl = (process.env.RECIBOS_SERVICE_URL || '').replace(/\/+$/, '');
 
   if (!baseUrl) {
     throw new Error('RECIBOS_SERVICE_URL no está configurado. Debe apuntar al microservicio de generación de recibos.');
   }
 
-  const response = await fetch(`${baseUrl}/generar-recibo`, {
+  const form = new FormData();
+  form.append('file', new Blob([fileBuffer]), originalFilename);
+  form.append('month', month);
+
+  const response = await fetch(`${baseUrl}/api/generar-recibo`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
+    body: form
   });
 
   if (!response.ok) {
@@ -28,7 +35,24 @@ async function generatePayslipPdfFromData(payload = {}) {
     throw new Error(`Error en generador de recibos (${response.status}): ${details || response.statusText || 'sin detalle'}`);
   }
 
-  return Buffer.from(await response.arrayBuffer());
+  const zipBuffer = Buffer.from(await response.arrayBuffer());
+  const zip = new AdmZip(zipBuffer);
+
+  const manifestEntry = zip.getEntry('manifest.json');
+  if (!manifestEntry) {
+    throw new Error('La respuesta del generador de recibos no incluye manifest.json');
+  }
+  const manifest = JSON.parse(zip.readAsText(manifestEntry));
+
+  const bySheet = {};
+  for (const item of manifest.generated || []) {
+    const entry = zip.getEntry(item.file);
+    if (!entry) continue;
+    if (!bySheet[item.sheet]) bySheet[item.sheet] = {};
+    bySheet[item.sheet][item.type] = entry.getData(); // 'Original' | 'Duplicado' -> Buffer
+  }
+
+  return { bySheet, manifest };
 }
 
 /**
@@ -245,36 +269,6 @@ function extractFinancialData(text) {
 }
 
 /**
- * En Vercel no se utiliza pdf-lib para renderizar el recibo. Se delega la
- * generación al microservicio externo basado en LibreOffice/OpenPyXL.
- * @param {object} worksheet ExcelJS Worksheet
- * @returns {Promise<{ dupBuffer: Buffer, origBuffer: Buffer }>}
- */
-async function excelToPdfBuffer(worksheet) {
-  const payload = extractReceiptFieldsFromWorksheet(worksheet);
-  const pdfBuffer = await generatePayslipPdfFromData(payload);
-  return Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer || []);
-}
-
-/**
- * En Vercel no se divide un PDF en memoria con pdf-lib; el servicio externo ya
- * renderiza la versión final del recibo. Para mantener compatibilidad de la API,
- * devolvemos el mismo buffer para ambas versiones.
- * @param {Buffer} sheetPdfBuffer
- * @returns {Promise<{ origBuffer: Buffer, dupBuffer: Buffer }>}
- */
-async function splitPdfBuffer(sheetPdfBuffer) {
-  const safeBuffer = Buffer.isBuffer(sheetPdfBuffer)
-    ? sheetPdfBuffer
-    : Buffer.from(sheetPdfBuffer || []);
-
-  return {
-    origBuffer: Buffer.from(safeBuffer),
-    dupBuffer: Buffer.from(safeBuffer)
-  };
-}
-
-/**
  * Firma de recibo en Vercel: se deja como pass-through para no depender de pdf-lib.
  * La firma digital real debe realizarse en el microservicio externo o en un worker
  * dedicado fuera del runtime serverless.
@@ -296,8 +290,6 @@ module.exports = {
   analyzeBuffer,
   extractFinancialData,
   extractReceiptFieldsFromWorksheet,
-  generatePayslipPdfFromData,
-  excelToPdfBuffer,
-  splitPdfBuffer,
+  generatePayslipsZipFromExcel,
   signPdfBuffer
 };
