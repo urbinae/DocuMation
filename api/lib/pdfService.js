@@ -269,17 +269,131 @@ function extractFinancialData(text) {
 }
 
 /**
- * Firma de recibo en Vercel: se deja como pass-through para no depender de pdf-lib.
- * La firma digital real debe realizarse en el microservicio externo o en un worker
- * dedicado fuera del runtime serverless.
- * @param {Buffer} pdfBuffer
- * @param {string} signatureBase64
- * @param {object} metadata
- * @returns {Promise<Buffer>}
+ * Estampa la firma y los metadatos de auditoría dentro del buffer PDF.
+ *
+ * La firma (signatureBase64) debe ser un data URL con el formato:
+ *   "data:image/png;base64,..." o "data:image/jpeg;base64,..."
+ *
+ * El objeto metadata puede incluir:
+ *   name      {string}  - Nombre del firmante
+ *   cuil      {string}  - CUIL del firmante
+ *   ip        {string}  - IP desde la que se firmó
+ *   timestamp {string}  - ISO timestamp de la firma
+ *   token     {string}  - Token único del recibo
+ *   position  {object}  - { x, y, width, height, page } (opcionales)
+ *
+ * @param {Buffer} pdfBuffer       Buffer del PDF original
+ * @param {string} signatureBase64 Data URL de la imagen de firma
+ * @param {object} metadata        Metadatos de auditoría
+ * @returns {Promise<Buffer>}      Buffer del PDF con la firma estampada
  */
 async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
-  if (!pdfBuffer) return Buffer.alloc(0);
-  return Buffer.from(pdfBuffer);
+  if (!pdfBuffer || pdfBuffer.length === 0) return Buffer.alloc(0);
+
+  const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
+
+  // ── 1. Cargar el documento ──────────────────────────────────────────────────
+  const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+
+  // ── 2. Determinar en qué página colocar la firma ────────────────────────────
+  const pages = pdfDoc.getPages();
+  const pageIndex =
+    typeof metadata.position?.page === 'number'
+      ? Math.max(0, Math.min(metadata.position.page, pages.length - 1))
+      : pages.length - 1; // última página por defecto
+
+  const targetPage = pages[pageIndex];
+  const { width: pageWidth, height: pageHeight } = targetPage.getSize();
+
+  // ── 3. Incrustar la imagen de firma ─────────────────────────────────────────
+  let sigImage = null;
+  let sigDims  = { width: 0, height: 0 };
+
+  if (typeof signatureBase64 === 'string' && signatureBase64.includes('base64,')) {
+    const [header, b64data] = signatureBase64.split('base64,');
+    const imgBytes = Buffer.from(b64data, 'base64');
+
+    try {
+      if (header.toLowerCase().includes('png')) {
+        sigImage = await pdfDoc.embedPng(imgBytes);
+      } else {
+        sigImage = await pdfDoc.embedJpg(imgBytes);
+      }
+
+      // Dimensiones deseadas de la imagen en el PDF
+      const sigW = typeof metadata.position?.width  === 'number' ? metadata.position.width  : 160;
+      const sigH = typeof metadata.position?.height === 'number' ? metadata.position.height : 60;
+      sigDims = sigImage.scale(Math.min(sigW / sigImage.width, sigH / sigImage.height));
+    } catch (imgErr) {
+      console.warn('[signPdfBuffer] No se pudo incrustar la imagen de firma:', imgErr.message);
+    }
+  }
+
+  // ── 4. Calcular posición XY en coordenadas pdf-lib (origen = esquina inf-izq) ─
+  const MARGIN  = 24;
+  const AUDIT_H = 44; // altura reservada para el bloque de texto de auditoría
+
+  // X: posición de la imagen de firma
+  const sigX =
+    typeof metadata.position?.x === 'number'
+      ? metadata.position.x
+      : MARGIN;
+
+  // Y: la firma va encima del bloque de auditoría
+  const sigY =
+    typeof metadata.position?.y === 'number'
+      ? metadata.position.y
+      : MARGIN + AUDIT_H;
+
+  // ── 5. Dibujar imagen de firma ───────────────────────────────────────────────
+  if (sigImage) {
+    targetPage.drawImage(sigImage, {
+      x:      sigX,
+      y:      sigY,
+      width:  sigDims.width,
+      height: sigDims.height,
+    });
+  }
+
+  // ── 6. Dibujar bloque de auditoría ───────────────────────────────────────────
+  const font    = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const FONT_SZ = 6.5;
+  const LINE_H  = 9;
+  const textX   = MARGIN;
+  const auditColor = rgb(0.35, 0.35, 0.35);
+
+  const auditLines = [
+    `Firmado electrónicamente${metadata.name ? ` por: ${metadata.name}` : ''}`,
+    [
+      metadata.cuil      && `CUIL: ${metadata.cuil}`,
+      metadata.ip        && `IP: ${metadata.ip}`,
+      metadata.timestamp && `Fecha: ${metadata.timestamp}`,
+    ].filter(Boolean).join('   |   '),
+    metadata.token ? `Token: ${metadata.token}` : null,
+  ].filter(Boolean);
+
+  // Línea separadora
+  targetPage.drawLine({
+    start: { x: MARGIN,             y: MARGIN + AUDIT_H - 2 },
+    end:   { x: pageWidth - MARGIN, y: MARGIN + AUDIT_H - 2 },
+    thickness: 0.5,
+    color: rgb(0.7, 0.7, 0.7),
+  });
+
+  auditLines.forEach((line, idx) => {
+    targetPage.drawText(line, {
+      x:        textX,
+      y:        MARGIN + AUDIT_H - 14 - idx * LINE_H,
+      size:     FONT_SZ,
+      font,
+      color:    auditColor,
+      maxWidth: pageWidth - MARGIN * 2,
+    });
+  });
+
+  // ── 7. Serializar y devolver el PDF modificado ───────────────────────────────
+  const signedBytes = await pdfDoc.save();
+  return Buffer.from(signedBytes);
 }
 
 module.exports = {
