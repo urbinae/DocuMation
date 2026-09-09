@@ -929,8 +929,12 @@ async function downloadHandler(req, res) {
     }
 
     const buffer = Buffer.from(await blob.arrayBuffer());
+    const empName = payslip.employees?.name || payslip.employee_name || 'recibo';
+    const safeName = String(empName).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const downloadFilename = `Recibo_${requestedType}_${safeName}_${payslip.month || payslip.id}.pdf`;
+
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${requestedType}_${payslip.id}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
     return res.send(buffer);
   } catch (err) {
     console.error('Error en downloadHandler:', err);

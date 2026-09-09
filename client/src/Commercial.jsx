@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+import { handleDirectDownload } from './utils/download';
 
 // ==========================================
 // LOGIN COMERCIAL
@@ -804,8 +805,8 @@ export function CommercialDashboard({ session, handleLogout }) {
                           {c.status === 'Firmado' && (
                             <a 
                               href={`${API_BASE}/api/contracts/pdf/${c.id}`} 
-                              target="_blank" 
-                              rel="noreferrer"
+                              download={`Contrato_${c.title || c.id}.pdf`}
+                              onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/contracts/pdf/${c.id}`, `Contrato_${c.title || c.id}.pdf`)}
                               className="btn btn-icon"
                               title="Descargar PDF Firmado"
                               style={{ color: 'var(--success)' }}
@@ -987,8 +988,8 @@ export function CommercialDashboard({ session, handleLogout }) {
                             <td>
                               <a 
                                 href={`${API_BASE}/api/contracts/pdf/${c.id}`} 
-                                target="_blank" 
-                                rel="noreferrer"
+                                download={`Contrato_${c.title || c.id}.pdf`}
+                                onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/contracts/pdf/${c.id}`, `Contrato_${c.title || c.id}.pdf`)}
                                 className="btn btn-primary"
                                 style={{ padding: '6px 12px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                               >

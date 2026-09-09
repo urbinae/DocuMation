@@ -10,6 +10,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 import ThemeToggle from '../shared/ThemeToggle';
+import { handleDirectDownload } from '../utils/download';
 export default function EmployeePortal({ token, payslipToSign = null, handleLogout, isDirectSign = true, theme, toggleTheme }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -369,12 +370,23 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '350px', margin: '0 auto' }}>
             {payslip.hasOriginal && (
-              <a href={`${API_BASE}/api/download/original/${payslip.id}`} className="btn btn-secondary">
+              <a
+                href={`${API_BASE}/api/download/original/${payslip.id}`}
+                download={`Recibo_Original_${payslip.month || payslip.id}.pdf`}
+                onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/original/${payslip.id}`, `Recibo_Original_${payslip.month || payslip.id}.pdf`)}
+                className="btn btn-secondary"
+              >
                 <Download size={16} />
                 Descargar Mi Recibo (Original)
               </a>
             )}
-            <a href={`${API_BASE}/api/download/signed/${payslip.id}`} className="btn btn-primary" style={{ background: 'var(--success)', boxShadow: '0 4px 14px 0 rgba(16, 185, 129, 0.3)' }}>
+            <a
+              href={`${API_BASE}/api/download/signed/${payslip.id}`}
+              download={`Recibo_Firmado_${payslip.month || payslip.id}.pdf`}
+              onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${payslip.id}`, `Recibo_Firmado_${payslip.month || payslip.id}.pdf`)}
+              className="btn btn-primary"
+              style={{ background: 'var(--success)', boxShadow: '0 4px 14px 0 rgba(16, 185, 129, 0.3)' }}
+            >
               <Download size={16} />
               Descargar Duplicado Firmado
             </a>

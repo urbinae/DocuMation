@@ -6,6 +6,7 @@ import {
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
+import { handleDirectDownload } from '../utils/download';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
@@ -618,6 +619,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
 
               <a
                 href={totalInPeriod > 0 ? `${API_BASE}/api/download-zip/${selectedMonth}` : '#'}
+                download={`Recibos_${selectedMonth}.zip`}
+                onClick={(e) => totalInPeriod > 0 && handleDirectDownload(e, `${API_BASE}/api/download-zip/${selectedMonth}`, `Recibos_${selectedMonth}.zip`)}
                 className={`btn btn-secondary ${signedInPeriod === 0 ? 'disabled' : ''}`}
                 style={{ pointerEvents: signedInPeriod === 0 ? 'none' : 'auto', opacity: signedInPeriod === 0 ? 0.5 : 1 }}
                 title="Descargar todos los Duplicados Firmados en un ZIP"
@@ -692,14 +695,26 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <span style={{ fontSize: '12px' }}>
                               📄 Original: {hasOrg ? (
-                                <a href={`${API_BASE}/api/download/original/${ps.id}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }} title="Descargar Original">
+                                <a
+                                  href={`${API_BASE}/api/download/original/${ps.id}`}
+                                  download={ps.originalFilename || `Recibo_Original_${ps.employee_name || ps.id}.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/original/${ps.id}`, ps.originalFilename || `Recibo_Original_${ps.employee_name || ps.id}.pdf`)}
+                                  style={{ color: 'var(--secondary)', textDecoration: 'none' }}
+                                  title="Descargar Original"
+                                >
                                   {ps.originalFilename ? ps.originalFilename.substring(0, 20) + '...' : 'Descargar'} <Download size={10} style={{ display: 'inline' }} />
                                 </a>
                               ) : <span style={{ color: 'var(--text-muted)' }}>Falta cargar</span>}
                             </span>
                             <span style={{ fontSize: '12px' }}>
                               📄 Duplicado: {hasDup ? (
-                                <a href={`${API_BASE}/api/download/duplicado/${ps.id}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }} title="Descargar Duplicado Base">
+                                <a
+                                  href={`${API_BASE}/api/download/duplicado/${ps.id}`}
+                                  download={ps.duplicadoFilename || `Recibo_Duplicado_${ps.employee_name || ps.id}.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/duplicado/${ps.id}`, ps.duplicadoFilename || `Recibo_Duplicado_${ps.employee_name || ps.id}.pdf`)}
+                                  style={{ color: 'var(--secondary)', textDecoration: 'none' }}
+                                  title="Descargar Duplicado Base"
+                                >
                                   {ps.duplicadoFilename ? ps.duplicadoFilename.substring(0, 20) + '...' : 'Descargar'} <Download size={10} style={{ display: 'inline' }} />
                                 </a>
                               ) : <span style={{ color: 'var(--text-muted)' }}>Falta cargar</span>}
@@ -791,6 +806,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             {isSigned && (
                               <a
                                 href={`${API_BASE}/api/download/signed/${ps.id}`}
+                                download={`Recibo_Firmado_${ps.employee_name || ps.id}.pdf`}
+                                onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${ps.id}`, `Recibo_Firmado_${ps.employee_name || ps.id}.pdf`)}
                                 className="btn btn-primary"
                                 style={{ padding: '6px 10px', background: 'var(--success)', boxShadow: 'none' }}
                                 title="Descargar Duplicado Firmado"
