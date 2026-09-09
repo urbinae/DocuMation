@@ -6,7 +6,8 @@ import {
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, Page } from 'react-pdf';
+import '../pdfConfig'; // Configura pdfjs.GlobalWorkerOptions con worker local
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 

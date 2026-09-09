@@ -5,9 +5,10 @@ import {
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, Page } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+import './pdfConfig'; // Configura pdfjs.GlobalWorkerOptions con worker local
 
 // Commercial module (untouched)
 import { CommercialLogin, CommercialDashboard } from './Commercial';
@@ -26,7 +27,6 @@ import EmployeePortal from './employee/EmployeePortal';
 import ThemeToggle from './shared/ThemeToggle';
 import AccessHub from './shared/AccessHub';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 export default function App() {
@@ -59,11 +59,11 @@ export default function App() {
     const searchParams = new URLSearchParams(window.location.search);
     const hasTokenInUrl = searchParams.has('token') || window.location.hash.includes('token=');
     const storedToken = sessionStorage.getItem('signingToken');
-    
+
     if (hasTokenInUrl || storedToken) {
       return 'direct-sign';
     }
-    
+
     const saved = localStorage.getItem('view');
     return saved || 'hub';
   });

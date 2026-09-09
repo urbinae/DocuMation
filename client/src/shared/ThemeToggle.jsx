@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Document, Page } from 'react-pdf';
+import '../pdfConfig'; // Configura pdfjs.GlobalWorkerOptions con worker local
 import { 
   FileText, Users, Settings, Upload, CheckCircle, 
   Clock, Mail, Download, Trash2, Send, Plus, 
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
-import { Document, Page, pdfjs } from 'react-pdf';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
