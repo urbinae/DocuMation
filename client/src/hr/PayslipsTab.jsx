@@ -613,6 +613,10 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
 
               <button
                 className="btn btn-primary"
+                disabled={safePayslips.length === 0}
+                style={{
+                  cursor: safePayslips.length === 0 ? 'not-allowed' : 'pointer'
+                }}
                 onClick={() => {
                   const unsentList = filteredPayslips.filter(p =>
                     p.status === 'Cargado' &&
@@ -645,7 +649,16 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               </a>
               <button
                 className="btn btn-secondary"
-                style={{ border: '1px solid rgba(239, 68, 68, 0.4)', color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}
+                disabled={safePayslips.length === 0}
+                style={{
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#f87171',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: safePayslips.length === 0 ? 0.5 : 1,
+                  cursor: safePayslips.length === 0 ? 'not-allowed' : 'pointer'
+                }}
                 onClick={() => {
                   setAdvancedDeleteConfirmInput('');
                   setSelectedDeletePeriods([...allUniquePeriods]);
