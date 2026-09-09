@@ -244,6 +244,13 @@ describe('Prueba de Integración: Flujo Completo Ingesta Excel -> PDF -> Split -
         email: 'vera@empresa.com',
         cuil: '23-26783898-4',
         puesto: 'Administrativo'
+      },
+      {
+        id: 'emp-uuid-26783898',
+        name: 'VERA MARIA VERONICA',
+        email: 'veronica@empresa.com',
+        cuil: '23-26783898-4',
+        puesto: 'Administrativo'
       }
     ];
     mockPayslips = [];
