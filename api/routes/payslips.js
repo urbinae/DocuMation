@@ -656,7 +656,7 @@ async function sendEmailHandler(req, res) {
     const { data: updatedPayslip, error: updateErr } = await supabase
       .from('payslips')
       .update({
-        status: 'ENVIADO',
+        status: 'Enviado',
         sent_at: sentAt
       })
       .eq('id', id)
@@ -736,7 +736,7 @@ router.post('/send-bulk', async (req, res) => {
         await supabase
           .from('payslips')
           .update({
-            status: 'ENVIADO',
+            status: 'Enviado',
             sent_at: sentAt
           })
           .eq('id', id);
