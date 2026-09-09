@@ -43,14 +43,14 @@ function enrichPayslipWithUrls(payslip) {
   return {
     ...payslip,
     // ── Alias camelCase requeridos por PayslipsTab.jsx / EmployeeDashboard.jsx ──
-    employeeId:    payslip.employee_id             || null,
-    originalPath:  payslip.original_storage_path  || null,
-    duplicadoPath: payslip.duplicado_storage_path  || null,
-    signedPath:    payslip.signed_storage_path     || null,
-    detectedCuil:  payslip.detected_cuil           || null,
-    financialData: payslip.financial_data          || null,
-    signedAt:      payslip.signed_at               || null,
-    scheduledAt:   payslip.scheduled_at            || null,
+    employeeId: payslip.employee_id || null,
+    originalPath: payslip.original_storage_path || null,
+    duplicadoPath: payslip.duplicado_storage_path || null,
+    signedPath: payslip.signed_storage_path || null,
+    detectedCuil: payslip.detected_cuil || null,
+    financialData: payslip.financial_data || null,
+    signedAt: payslip.signed_at || null,
+    scheduledAt: payslip.scheduled_at || null,
     // ── URL de firma basada en BASE_URL ──
     sign_url: payslip.token ? `${baseUrl}/api/sign/${payslip.token}` : null
   };
@@ -298,6 +298,15 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
       .from('employees')
       .select('id, cuil, name');
 
+    // 0. Enviar el Excel COMPLETO una sola vez al microservicio de generación
+    //    de recibos (multipart: file + month). Devuelve todos los PDFs
+    //    (Original/Duplicado) ya agrupados por nombre de hoja.
+    const { bySheet } = await pdfService.generatePayslipsZipFromExcel(
+      req.file.buffer,
+      month,
+      req.file.originalname || 'planilla.xlsx'
+    );
+
     for (const worksheet of workbook.worksheets) {
       const sheetNameTrimmed = worksheet.name.trim();
       const sheetNameUpper = sheetNameTrimmed.toUpperCase();
@@ -313,8 +322,17 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
 
       totalSheets++;
 
-      // 2. Extracción y generación de Buffers PDF independientes (Duplicado B2:G77 y Original B80:G153)
-      const { dupBuffer, origBuffer } = await pdfService.excelToPdfBuffer(worksheet);
+      // 1. PDFs ya generados por el microservicio para esta hoja
+      const sheetPdfs = bySheet[worksheet.name] || {};
+      const origBuffer = sheetPdfs['Original'] || null;
+      const dupBuffer = sheetPdfs['Duplicado'] || null;
+
+      if (!origBuffer && !dupBuffer) {
+        errors.push({ sheet: worksheet.name, error: 'El generador de recibos no devolvió PDFs para esta hoja' });
+        continue;
+      }
+
+      const sheetPdfBuffer = origBuffer || dupBuffer;
 
       // 3. Extraer texto completo de celdas para detección de CUIL y matcheo
       let worksheetText = '';
@@ -399,36 +417,48 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
         continue;
       }
 
-      // 4. Hashes y Rutas de Supabase Storage
-      const origHash = pdfService.getBufferHash(origBuffer);
-      const dupHash = pdfService.getBufferHash(dupBuffer);
+      // 5. Hashes de los PDFs reales devueltos por el microservicio (pueden faltar
+      //    si esa hoja no generó alguno de los dos tipos)
+      const origHash = origBuffer ? pdfService.getBufferHash(origBuffer) : null;
+      const dupHash = dupBuffer ? pdfService.getBufferHash(dupBuffer) : null;
 
+      // 6. Subida de Buffers a Supabase Storage (solo los que existan)
       const cleanSheetName = pdfService.sanitizeFileName(worksheet.name);
-      const origStoragePath = `originals/${uuidv4()}_${cleanSheetName}_original.pdf`;
-      const dupStoragePath = `duplicados/${uuidv4()}_${cleanSheetName}_duplicado.pdf`;
+      const origStoragePath = origBuffer ? `originals/${uuidv4()}_${cleanSheetName}_original.pdf` : null;
+      const dupStoragePath = dupBuffer ? `duplicados/${uuidv4()}_${cleanSheetName}_duplicado.pdf` : null;
 
-      // 5. Persistencia en Supabase Storage directamente desde memoria
-      const [origUpload, dupUpload] = await Promise.all([
-        supabase.storage.from('payslips').upload(origStoragePath, origBuffer, { contentType: 'application/pdf', upsert: true }),
-        supabase.storage.from('payslips').upload(dupStoragePath, dupBuffer, { contentType: 'application/pdf', upsert: true })
+      const uploadResults = await Promise.all([
+        origBuffer
+          ? supabase.storage.from('payslips').upload(origStoragePath, origBuffer, { contentType: 'application/pdf', upsert: true })
+          : Promise.resolve({ error: null }),
+        dupBuffer
+          ? supabase.storage.from('payslips').upload(dupStoragePath, dupBuffer, { contentType: 'application/pdf', upsert: true })
+          : Promise.resolve({ error: null })
       ]);
 
-      if (origUpload.error || dupUpload.error) {
-        errors.push({ sheet: worksheet.name, error: `Error subiendo archivos a Storage: ${origUpload.error?.message || dupUpload.error?.message}` });
+      const uploadError = uploadResults.find(r => r.error)?.error;
+      if (uploadError) {
+        errors.push({ sheet: worksheet.name, error: `Error subiendo archivos a Storage: ${uploadError.message}` });
         continue;
       }
 
-      // 6. Guardar/Actualizar en Supabase PostgreSQL (tabla 'payslips')
+      // 7. Guardar/Actualizar en Base de Datos PostgreSQL
+      const persistPayload = {
+        status: 'Cargado'
+      };
+      if (origStoragePath) {
+        persistPayload.original_storage_path = origStoragePath;
+        persistPayload.original_hash = origHash;
+      }
+      if (dupStoragePath) {
+        persistPayload.duplicado_storage_path = dupStoragePath;
+        persistPayload.duplicado_hash = dupHash;
+      }
+
       if (existingPayslip) {
         await supabase
           .from('payslips')
-          .update({
-            original_storage_path: origStoragePath,
-            duplicado_storage_path: dupStoragePath,
-            original_hash: origHash,
-            duplicado_hash: dupHash,
-            status: 'Cargado'
-          })
+          .update(persistPayload)
           .eq('id', existingPayslip.id);
       } else {
         await supabase
@@ -437,8 +467,8 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
             employee_id: employee.id,
             detected_cuil: analysis.cuil,
             month,
-            original_storage_path: origStoragePath,
-            duplicado_storage_path: dupStoragePath,
+            original_storage_path: origStoragePath || '',
+            duplicado_storage_path: dupStoragePath || '',
             original_hash: origHash,
             duplicado_hash: dupHash,
             status: 'Cargado',
@@ -671,8 +701,8 @@ router.post('/send-bulk', async (req, res) => {
       return res.status(400).json({ error: 'Debe proporcionar un arreglo de IDs de recibos en el campo "ids"' });
     }
 
-    const results  = [];
-    const errors   = [];
+    const results = [];
+    const errors = [];
 
     for (const id of ids) {
       try {
@@ -688,7 +718,7 @@ router.post('/send-bulk', async (req, res) => {
         }
 
         const employeeEmail = payslip.employees?.email;
-        const employeeName  = payslip.employees?.name || 'Empleado';
+        const employeeName = payslip.employees?.name || 'Empleado';
 
         if (!employeeEmail) {
           errors.push({ id, error: 'El empleado no tiene email registrado' });
@@ -757,9 +787,9 @@ async function viewPayslipHandler(req, res) {
     const requestedType = (type || 'duplicado').toLowerCase();
 
     const pathMap = {
-      original:  payslip.original_storage_path || payslip.file_path,
+      original: payslip.original_storage_path || payslip.file_path,
       duplicado: payslip.duplicado_storage_path || payslip.original_storage_path || payslip.file_path,
-      signed:    payslip.signed_storage_path || payslip.duplicado_storage_path || payslip.original_storage_path || payslip.file_path
+      signed: payslip.signed_storage_path || payslip.duplicado_storage_path || payslip.original_storage_path || payslip.file_path
     };
 
     const storagePath = pathMap[requestedType];
