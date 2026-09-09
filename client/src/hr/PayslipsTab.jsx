@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   FileText, Users, Settings, Upload, CheckCircle,
   Clock, Mail, Download, Trash2, Send, Plus,
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, Page } from 'react-pdf';
+import '../pdfConfig'; // Configura pdfjs.GlobalWorkerOptions con worker local
+import { handleDirectDownload } from '../utils/download';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
@@ -356,32 +358,49 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
     }
   };
 
-  const getMatchingDeletePayslips = () => {
-    return payslips.filter(p => {
+  const safePayslips = useMemo(() => (Array.isArray(payslips) ? payslips : []), [payslips]);
+
+  const allUniquePeriods = useMemo(() => {
+    return [...new Set(safePayslips.map(p => p.month || p.periodo).filter(Boolean))].sort().reverse();
+  }, [safePayslips]);
+
+  const allStatuses = useMemo(() => {
+    const defaultStatuses = ['Cargado', 'Programado', 'Enviado', 'Firmado'];
+    const dataStatuses = safePayslips.map(p => p.status).filter(Boolean);
+    return Array.from(new Set([...defaultStatuses, ...dataStatuses]));
+  }, [safePayslips]);
+
+  const matchedDeletePayslips = useMemo(() => {
+    if (!safePayslips.length) return [];
+    return safePayslips.filter(p => {
       // 1. Verificar Período
-      const matchPeriod = selectedDeletePeriods.length === 0 ? false : selectedDeletePeriods.includes(p.month);
+      const pMonth = p.month || p.periodo;
+      const matchPeriod = selectedDeletePeriods.length > 0 && selectedDeletePeriods.includes(pMonth);
 
       // 2. Verificar Empleado
       let matchEmployee = false;
       if (selectedDeleteEmployees.length > 0) {
         const empId = p.employeeId || p.employee_id || p.employees?.id;
-        if (empId) {
-          matchEmployee = selectedDeleteEmployees.includes(empId);
+        if (empId !== undefined && empId !== null) {
+          matchEmployee = selectedDeleteEmployees.includes(String(empId));
         } else {
           matchEmployee = selectedDeleteEmployees.includes('unassigned');
         }
       }
 
       // 3. Verificar Estado
-      const matchStatus = selectedDeleteStatuses.length === 0 ? false : selectedDeleteStatuses.includes(p.status);
+      let matchStatus = false;
+      if (selectedDeleteStatuses.length > 0) {
+        const pStatus = (p.status || '').toLowerCase();
+        matchStatus = selectedDeleteStatuses.some(s => s.toLowerCase() === pStatus);
+      }
 
       return matchPeriod && matchEmployee && matchStatus;
     });
-  };
+  }, [safePayslips, selectedDeletePeriods, selectedDeleteEmployees, selectedDeleteStatuses]);
 
   const handleBulkDelete = async () => {
-    const matched = getMatchingDeletePayslips();
-    const idsToDelete = matched.map(p => p.id);
+    const idsToDelete = matchedDeletePayslips.map(p => p.id);
     if (idsToDelete.length === 0) return;
 
     try {
@@ -398,8 +417,6 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
       triggerAlert('error', e.message);
     }
   };
-
-  const safePayslips = Array.isArray(payslips) ? payslips : [];
 
   const filteredPayslips = safePayslips.filter(p => {
     const pMonth = p.month || p.periodo;
@@ -597,6 +614,10 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
 
               <button
                 className="btn btn-primary"
+                disabled={safePayslips.length === 0}
+                style={{
+                  cursor: safePayslips.length === 0 ? 'not-allowed' : 'pointer'
+                }}
                 onClick={() => {
                   const unsentList = filteredPayslips.filter(p =>
                     p.status === 'Cargado' &&
@@ -618,6 +639,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
 
               <a
                 href={totalInPeriod > 0 ? `${API_BASE}/api/download-zip/${selectedMonth}` : '#'}
+                download={`Recibos_${selectedMonth}.zip`}
+                onClick={(e) => totalInPeriod > 0 && handleDirectDownload(e, `${API_BASE}/api/download-zip/${selectedMonth}`, `Recibos_${selectedMonth}.zip`)}
                 className={`btn btn-secondary ${signedInPeriod === 0 ? 'disabled' : ''}`}
                 style={{ pointerEvents: signedInPeriod === 0 ? 'none' : 'auto', opacity: signedInPeriod === 0 ? 0.5 : 1 }}
                 title="Descargar todos los Duplicados Firmados en un ZIP"
@@ -627,12 +650,21 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
               </a>
               <button
                 className="btn btn-secondary"
-                style={{ border: '1px solid rgba(239, 68, 68, 0.4)', color: '#f87171', display: 'flex', alignItems: 'center', gap: '6px' }}
+                disabled={safePayslips.length === 0}
+                style={{
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#f87171',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: safePayslips.length === 0 ? 0.5 : 1,
+                  cursor: safePayslips.length === 0 ? 'not-allowed' : 'pointer'
+                }}
                 onClick={() => {
                   setAdvancedDeleteConfirmInput('');
-                  setSelectedDeletePeriods([]);
-                  setSelectedDeleteEmployees([]);
-                  setSelectedDeleteStatuses([]);
+                  setSelectedDeletePeriods([...allUniquePeriods]);
+                  setSelectedDeleteEmployees([...employees.map(e => String(e.id)), 'unassigned']);
+                  setSelectedDeleteStatuses([...allStatuses]);
                   setShowAdvancedDeleteModal(true);
                 }}
                 title="Borrar recibos de sueldo usando múltiples filtros avanzados"
@@ -692,14 +724,26 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <span style={{ fontSize: '12px' }}>
                               📄 Original: {hasOrg ? (
-                                <a href={`${API_BASE}/api/download/original/${ps.id}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }} title="Descargar Original">
+                                <a
+                                  href={`${API_BASE}/api/download/original/${ps.id}`}
+                                  download={ps.originalFilename || `Recibo_Original_${ps.employee_name || ps.id}.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/original/${ps.id}`, ps.originalFilename || `Recibo_Original_${ps.employee_name || ps.id}.pdf`)}
+                                  style={{ color: 'var(--secondary)', textDecoration: 'none' }}
+                                  title="Descargar Original"
+                                >
                                   {ps.originalFilename ? ps.originalFilename.substring(0, 20) + '...' : 'Descargar'} <Download size={10} style={{ display: 'inline' }} />
                                 </a>
                               ) : <span style={{ color: 'var(--text-muted)' }}>Falta cargar</span>}
                             </span>
                             <span style={{ fontSize: '12px' }}>
                               📄 Duplicado: {hasDup ? (
-                                <a href={`${API_BASE}/api/download/duplicado/${ps.id}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }} title="Descargar Duplicado Base">
+                                <a
+                                  href={`${API_BASE}/api/download/duplicado/${ps.id}`}
+                                  download={ps.duplicadoFilename || `Recibo_Duplicado_${ps.employee_name || ps.id}.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/duplicado/${ps.id}`, ps.duplicadoFilename || `Recibo_Duplicado_${ps.employee_name || ps.id}.pdf`)}
+                                  style={{ color: 'var(--secondary)', textDecoration: 'none' }}
+                                  title="Descargar Duplicado Base"
+                                >
                                   {ps.duplicadoFilename ? ps.duplicadoFilename.substring(0, 20) + '...' : 'Descargar'} <Download size={10} style={{ display: 'inline' }} />
                                 </a>
                               ) : <span style={{ color: 'var(--text-muted)' }}>Falta cargar</span>}
@@ -791,6 +835,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             {isSigned && (
                               <a
                                 href={`${API_BASE}/api/download/signed/${ps.id}`}
+                                download={`Recibo_Firmado_${ps.employee_name || ps.id}.pdf`}
+                                onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${ps.id}`, `Recibo_Firmado_${ps.employee_name || ps.id}.pdf`)}
                                 className="btn btn-primary"
                                 style={{ padding: '6px 10px', background: 'var(--success)', boxShadow: 'none' }}
                                 title="Descargar Duplicado Firmado"
@@ -1152,21 +1198,19 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
 
       {/* Modal de Borrado Masivo Avanzado */}
       {showAdvancedDeleteModal && (() => {
-        const allUniquePeriods = [...new Set(payslips.map(p => p.month))].sort().reverse();
-        const matched = getMatchingDeletePayslips();
-        const allStatuses = ['Cargado', 'Programado', 'Enviado', 'Firmado'];
+        const matched = matchedDeletePayslips;
 
         const handleSelectAllPeriods = (select) => {
-          setSelectedDeletePeriods(select ? allUniquePeriods : []);
+          setSelectedDeletePeriods(select ? [...allUniquePeriods] : []);
         };
 
         const handleSelectAllEmployees = (select) => {
-          const allEmpIds = [...employees.map(e => e.id), 'unassigned'];
+          const allEmpIds = [...employees.map(e => String(e.id)), 'unassigned'];
           setSelectedDeleteEmployees(select ? allEmpIds : []);
         };
 
         const handleSelectAllStatuses = (select) => {
-          setSelectedDeleteStatuses(select ? allStatuses : []);
+          setSelectedDeleteStatuses(select ? [...allStatuses] : []);
         };
 
         return (
@@ -1235,11 +1279,10 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                               type="checkbox"
                               checked={selectedDeletePeriods.includes(m)}
                               onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedDeletePeriods(prev => [...prev, m]);
-                                } else {
-                                  setSelectedDeletePeriods(prev => prev.filter(x => x !== m));
-                                }
+                                const checked = e.target.checked;
+                                setSelectedDeletePeriods(prev =>
+                                  checked ? [...prev, m] : prev.filter(x => x !== m)
+                                );
                               }}
                             />
                             {m}
@@ -1265,31 +1308,32 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                           type="checkbox"
                           checked={selectedDeleteEmployees.includes('unassigned')}
                           onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedDeleteEmployees(prev => [...prev, 'unassigned']);
-                            } else {
-                              setSelectedDeleteEmployees(prev => prev.filter(x => x !== 'unassigned'));
-                            }
+                            const checked = e.target.checked;
+                            setSelectedDeleteEmployees(prev =>
+                              checked ? [...prev, 'unassigned'] : prev.filter(x => x !== 'unassigned')
+                            );
                           }}
                         />
                         Sin asignar (Desconocido)
                       </label>
-                      {employees.map(e => (
-                        <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedDeleteEmployees.includes(e.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedDeleteEmployees(prev => [...prev, e.id]);
-                              } else {
-                                setSelectedDeleteEmployees(prev => prev.filter(x => x !== e.id));
-                              }
-                            }}
-                          />
-                          {e.name}
-                        </label>
-                      ))}
+                      {employees.map(e => {
+                        const eIdStr = String(e.id);
+                        return (
+                          <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedDeleteEmployees.includes(eIdStr)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setSelectedDeleteEmployees(prev =>
+                                  checked ? [...prev, eIdStr] : prev.filter(x => x !== eIdStr)
+                                );
+                              }}
+                            />
+                            {e.name}
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1310,11 +1354,10 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             type="checkbox"
                             checked={selectedDeleteStatuses.includes(s)}
                             onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedDeleteStatuses(prev => [...prev, s]);
-                              } else {
-                                setSelectedDeleteStatuses(prev => prev.filter(x => x !== s));
-                              }
+                              const checked = e.target.checked;
+                              setSelectedDeleteStatuses(prev =>
+                                checked ? [...prev, s] : prev.filter(x => x !== s)
+                              );
                             }}
                           />
                           {s}

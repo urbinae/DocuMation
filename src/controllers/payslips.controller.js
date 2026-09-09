@@ -1042,6 +1042,27 @@ export const deleteBulkPayslips = async (req, res) => {
     let count = 0;
 
     if (Array.isArray(ids) && ids.length > 0) {
+      const { data: payslips } = await supabaseAdmin
+        .from('payslips')
+        .select('original_storage_path, duplicado_storage_path, signed_storage_path')
+        .in('id', ids);
+
+      if (payslips && payslips.length > 0) {
+        const filesToRemove = [];
+        payslips.forEach(p => {
+          if (p.original_storage_path) filesToRemove.push(p.original_storage_path);
+          if (p.duplicado_storage_path) filesToRemove.push(p.duplicado_storage_path);
+          if (p.signed_storage_path) filesToRemove.push(p.signed_storage_path);
+        });
+        if (filesToRemove.length > 0) {
+          try {
+            await supabaseAdmin.storage.from('payslips').remove(filesToRemove);
+          } catch (stErr) {
+            console.warn('[Delete Bulk Storage Warning]:', stErr.message);
+          }
+        }
+      }
+
       await supabaseAdmin.from('payslips').delete().in('id', ids);
       count = ids.length;
     } else if (month) {

@@ -656,7 +656,7 @@ async function sendEmailHandler(req, res) {
     const { data: updatedPayslip, error: updateErr } = await supabase
       .from('payslips')
       .update({
-        status: 'ENVIADO',
+        status: 'Enviado',
         sent_at: sentAt
       })
       .eq('id', id)
@@ -736,7 +736,7 @@ router.post('/send-bulk', async (req, res) => {
         await supabase
           .from('payslips')
           .update({
-            status: 'ENVIADO',
+            status: 'Enviado',
             sent_at: sentAt
           })
           .eq('id', id);
@@ -929,8 +929,12 @@ async function downloadHandler(req, res) {
     }
 
     const buffer = Buffer.from(await blob.arrayBuffer());
+    const empName = payslip.employees?.name || payslip.employee_name || 'recibo';
+    const safeName = String(empName).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const downloadFilename = `Recibo_${requestedType}_${safeName}_${payslip.month || payslip.id}.pdf`;
+
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${requestedType}_${payslip.id}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
     return res.send(buffer);
   } catch (err) {
     console.error('Error en downloadHandler:', err);
@@ -943,6 +947,92 @@ router.get('/download/file/:id/:type?', downloadHandler);
 router.get('/download/signed/:id', downloadHandler);
 router.get('/download/original/:id', downloadHandler);
 router.get('/download/duplicado/:id', downloadHandler);
+
+/**
+ * GET /api/download-zip/:period
+ * Descarga un ZIP con todos los recibos firmados (signed_storage_path) del período indicado.
+ * El período debe tener el formato YYYY-MM (ej: 2026-09).
+ * Usa streaming con archiver para no saturar memoria.
+ */
+async function downloadZipHandler(req, res) {
+  const archiver = require('archiver');
+  try {
+    const { period } = req.params;
+
+    // Validar formato YYYY-MM
+    if (!/^\d{4}-\d{2}$/.test(period)) {
+      return res.status(400).json({ error: 'El período debe tener el formato YYYY-MM (ej: 2026-09)' });
+    }
+
+    // Obtener todos los recibos firmados del período
+    const { data: payslips, error } = await supabase
+      .from('payslips')
+      .select(`
+        id,
+        month,
+        signed_storage_path,
+        employees (name, cuil)
+      `)
+      .eq('month', period)
+      .not('signed_storage_path', 'is', null);
+
+    if (error) throw error;
+
+    if (!payslips || payslips.length === 0) {
+      return res.status(404).json({ error: `No hay recibos firmados para el período ${period}` });
+    }
+
+    // Configurar headers para descarga ZIP en streaming
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="Recibos_Firmados_${period}.zip"`);
+
+    const archive = archiver('zip', { zlib: { level: 6 } });
+
+    // Propagar errores del archivador al cliente
+    archive.on('error', (err) => {
+      console.error('Error en archiver (download-zip):', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Error al generar ZIP', details: err.message });
+      }
+    });
+
+    archive.pipe(res);
+
+    // Descargar cada PDF firmado desde Supabase Storage y añadirlo al ZIP
+    for (const payslip of payslips) {
+      const storagePath = payslip.signed_storage_path;
+      const empName = payslip.employees?.name || `recibo_${payslip.id}`;
+      const safeName = String(empName).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cuil = payslip.employees?.cuil ? `_${payslip.employees.cuil}` : '';
+      const filename = `${safeName}${cuil}_${period}.pdf`;
+
+      try {
+        const { data: blob, error: dlErr } = await supabase.storage
+          .from('payslips')
+          .download(storagePath);
+
+        if (dlErr || !blob) {
+          console.warn(`[download-zip] No se pudo descargar ${storagePath}: ${dlErr?.message}`);
+          continue; // Saltar archivos con error sin abortar el ZIP
+        }
+
+        const buffer = Buffer.from(await blob.arrayBuffer());
+        archive.append(buffer, { name: filename });
+      } catch (fileErr) {
+        console.warn(`[download-zip] Error procesando ${storagePath}:`, fileErr.message);
+      }
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error('Error en downloadZipHandler:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error al generar ZIP de recibos', details: err.message });
+    }
+  }
+}
+
+router.get('/download-zip/:period', downloadZipHandler);
 
 // Alias para la URL usada en PayslipsTab.jsx  (/api/download/original/:id)
 // Se monta también en api/index.js bajo /api/download/
@@ -1096,6 +1186,7 @@ module.exports = {
   handleSignByToken,
   enrichPayslipWithUrls,
   downloadHandler,
+  downloadZipHandler,
   getPayslipsByEmployeeHandler,
   viewPayslipHandler
 };

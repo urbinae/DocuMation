@@ -9,7 +9,7 @@ const { validate, payslipSchema, clientSchema, contractSchema } = require('./lib
 const employeesRouter = require('./routes/employees');
 const { authRouter, handleLogin, handleGoogleLogin, handlePushSubscription } = require('./routes/auth');
 const settingsRouter = require('./routes/settings');
-const { payslipsRouter, handleSignByToken, downloadHandler, getPayslipsByEmployeeHandler, viewPayslipHandler } = require('./routes/payslips');
+const { payslipsRouter, handleSignByToken, downloadHandler, downloadZipHandler, getPayslipsByEmployeeHandler, viewPayslipHandler } = require('./routes/payslips');
 const aiRouter = require('./routes/ai');
 const emailService = require('./services/emailService');
 const aiService = require('./services/aiService');
@@ -68,6 +68,7 @@ app.use('/api/ai', aiRouter);
 // -----------------------------------------------------------------------------
 app.get('/api/payslips/view/:id/:type?', viewPayslipHandler);
 app.get('/api/sign/view/:token/:type?', viewPayslipHandler);
+app.get('/api/download-zip/:period', downloadZipHandler);
 app.get('/api/download/:type/:id', downloadHandler);
 app.get('/api/download/file/:id/:type?', downloadHandler);
 app.get('/api/download/signed/:id', downloadHandler);

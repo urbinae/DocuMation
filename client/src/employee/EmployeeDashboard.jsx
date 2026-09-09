@@ -5,13 +5,15 @@ import {
   FileUp, FileDown, ArrowRight, Eye, RefreshCw, X, LogOut, Lock, Key,
   BarChart2, AlertTriangle, TrendingUp, Calendar, FolderUp, Sun, Moon, Briefcase, Menu, Activity
 } from 'lucide-react';
-import { Document, Page, pdfjs } from 'react-pdf';
+import { Document, Page } from 'react-pdf';
+import '../pdfConfig'; // Configura pdfjs.GlobalWorkerOptions con worker local
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 import ThemeToggle from '../shared/ThemeToggle';
 import FinancialAnalyticsTab from './FinancialAnalyticsTab';
 import EmployeePortal from './EmployeePortal';
+import { handleDirectDownload } from '../utils/download';
 export default function EmployeeDashboard({ employee, handleLogout, theme, toggleTheme, switchToHrView }) {
   const [payslips, setPayslips] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -223,7 +225,13 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
                             <td style={{ fontWeight: '600' }}>{ps.month}</td>
                             <td>
                               {hasOriginal ? (
-                                <a href={`${API_BASE}/api/download/original/${ps.id}`} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                                <a
+                                  href={`${API_BASE}/api/download/original/${ps.id}`}
+                                  download={`Recibo_Original_${ps.month || ps.id}.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/original/${ps.id}`, `Recibo_Original_${ps.month || ps.id}.pdf`)}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                                >
                                   <Download size={12} />
                                   Descargar
                                 </a>
@@ -233,12 +241,24 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
                             </td>
                             <td>
                               {isSigned ? (
-                                <a href={`${API_BASE}/api/download/signed/${ps.id}`} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                                <a
+                                  href={`${API_BASE}/api/download/signed/${ps.id}`}
+                                  download={`Recibo_Firmado_${ps.month || ps.id}.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${ps.id}`, `Recibo_Firmado_${ps.month || ps.id}.pdf`)}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                                >
                                   <Download size={12} />
                                   Descargar Firmado
                                 </a>
                               ) : hasDuplicado ? (
-                                <a href={`${API_BASE}/api/download/duplicado/${ps.id}`} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                                <a
+                                  href={`${API_BASE}/api/download/duplicado/${ps.id}`}
+                                  download={`Recibo_Duplicado_${ps.month || ps.id}.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/duplicado/${ps.id}`, `Recibo_Duplicado_${ps.month || ps.id}.pdf`)}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                                >
                                   <Download size={12} />
                                   Borrador
                                 </a>
