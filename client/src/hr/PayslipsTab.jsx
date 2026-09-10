@@ -726,8 +726,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                               📄 Original: {hasOrg ? (
                                 <a
                                   href={`${API_BASE}/api/download/original/${ps.id}`}
-                                  download={ps.originalFilename || `Recibo_Original_${ps.employee_name || ps.id}.pdf`}
-                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/original/${ps.id}`, ps.originalFilename || `Recibo_Original_${ps.employee_name || ps.id}.pdf`)}
+                                  download={`${ps.month || selectedMonth || '0000-00'} Recibo de Sueldo ${ps.employeeName || ps.employees?.name || ps.employee_name || 'Empleado'} - Original.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/original/${ps.id}`, `${ps.month || selectedMonth || '0000-00'} Recibo de Sueldo ${ps.employeeName || ps.employees?.name || ps.employee_name || 'Empleado'} - Original.pdf`)}
                                   style={{ color: 'var(--secondary)', textDecoration: 'none' }}
                                   title="Descargar Original"
                                 >
@@ -739,8 +739,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                               📄 Duplicado: {hasDup ? (
                                 <a
                                   href={`${API_BASE}/api/download/duplicado/${ps.id}`}
-                                  download={ps.duplicadoFilename || `Recibo_Duplicado_${ps.employee_name || ps.id}.pdf`}
-                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/duplicado/${ps.id}`, ps.duplicadoFilename || `Recibo_Duplicado_${ps.employee_name || ps.id}.pdf`)}
+                                  download={`${ps.month || selectedMonth || '0000-00'} Recibo de Sueldo ${ps.employeeName || ps.employees?.name || ps.employee_name || 'Empleado'} - Duplicado.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/duplicado/${ps.id}`, `${ps.month || selectedMonth || '0000-00'} Recibo de Sueldo ${ps.employeeName || ps.employees?.name || ps.employee_name || 'Empleado'} - Duplicado.pdf`)}
                                   style={{ color: 'var(--secondary)', textDecoration: 'none' }}
                                   title="Descargar Duplicado Base"
                                 >
@@ -835,8 +835,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             {isSigned && (
                               <a
                                 href={`${API_BASE}/api/download/signed/${ps.id}`}
-                                download={`Recibo_Firmado_${ps.employee_name || ps.id}.pdf`}
-                                onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${ps.id}`, `Recibo_Firmado_${ps.employee_name || ps.id}.pdf`)}
+                                download={`${ps.month || selectedMonth || '0000-00'} Recibo de Sueldo ${ps.employeeName || ps.employees?.name || ps.employee_name || 'Empleado'} - Firmado.pdf`}
+                                onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${ps.id}`, `${ps.month || selectedMonth || '0000-00'} Recibo de Sueldo ${ps.employeeName || ps.employees?.name || ps.employee_name || 'Empleado'} - Firmado.pdf`)}
                                 className="btn btn-primary"
                                 style={{ padding: '6px 10px', background: 'var(--success)', boxShadow: 'none' }}
                                 title="Descargar Duplicado Firmado"
