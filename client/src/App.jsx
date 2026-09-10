@@ -271,6 +271,10 @@ export default function App() {
     setToken(null);
     setEmployeeSession(null);
     setHrSession(null);
+    // Limpiar el token del hash de la URL sin agregar entrada al historial
+    if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
     setView('hub');
   };
 

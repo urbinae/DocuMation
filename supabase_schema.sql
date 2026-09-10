@@ -31,14 +31,31 @@ CREATE INDEX IF NOT EXISTS idx_employees_archived ON public.employees(archived);
 CREATE TABLE IF NOT EXISTS public.payslips (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
-    periodo VARCHAR(20) NOT NULL,
-    file_path TEXT NOT NULL,
-    file_url TEXT,
-    status VARCHAR(50) DEFAULT 'pendiente' NOT NULL,
+    -- 'month' es el período en formato YYYY-MM (ej: 2026-09)
+    month VARCHAR(20),
+    -- Rutas en Supabase Storage para los distintos tipos de PDF
+    original_storage_path TEXT,
+    duplicado_storage_path TEXT,
+    signed_storage_path TEXT,
+    -- Hashes SHA-256 para deduplicación de archivos
+    original_hash TEXT,
+    duplicado_hash TEXT,
+    -- CUIL detectado automáticamente del PDF
+    detected_cuil VARCHAR(20),
+    -- Token único para el link de firma electrónica
+    token UUID UNIQUE,
+    -- Estado del recibo: 'Cargado', 'Pendiente', 'Firmado'
+    status VARCHAR(50) DEFAULT 'Cargado' NOT NULL,
+    -- Datos financieros extraídos del PDF (grossPay, netPay, deductions, basicSalary)
+    financial_data JSONB,
+    -- Campos de firma electrónica
     signed_at TIMESTAMPTZ,
     signature_image_path TEXT,
     ip_address VARCHAR(45),
     user_agent TEXT,
+    -- Campos legacy (mantenidos por compatibilidad)
+    file_path TEXT,
+    file_url TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );

@@ -1,6 +1,26 @@
 import React from 'react';
 import { TrendingUp, DollarSign, Activity } from 'lucide-react';
 
+/**
+ * Extrae los montos financieros de un recibo.
+ * El backend guarda los importes en ps.financial_data (snake_case, campo JSONB),
+ * que el helper enrichPayslipWithUrls mapea a ps.financialData (camelCase).
+ * También se acepta grossPay/netPay directamente en el objeto por compatibilidad.
+ */
+function getAmounts(ps) {
+  // Primero intentamos financialData (camelCase, vía enrichPayslipWithUrls)
+  const fd = ps.financialData || ps.financial_data || null;
+  const grossPay =
+    (fd && typeof fd.grossPay === 'number' ? fd.grossPay : 0) ||
+    (fd && typeof fd.gross_pay === 'number' ? fd.gross_pay : 0) ||
+    (typeof ps.grossPay === 'number' ? ps.grossPay : 0);
+  const netPay =
+    (fd && typeof fd.netPay === 'number' ? fd.netPay : 0) ||
+    (fd && typeof fd.net_pay === 'number' ? fd.net_pay : 0) ||
+    (typeof ps.netPay === 'number' ? ps.netPay : 0);
+  return { grossPay, netPay };
+}
+
 export default function FinancialAnalyticsTab({ payslips }) {
   if (!payslips || payslips.length === 0) {
     return (
@@ -10,18 +30,19 @@ export default function FinancialAnalyticsTab({ payslips }) {
     );
   }
 
-  // Ordenar por fecha o periodo si es posible (asumimos que month tiene formato año-mes o similar, pero lo mostramos tal cual)
-  const sortedPayslips = [...payslips].reverse(); // Asumiendo que vienen ordenados del más nuevo al más viejo
+  // Ordenamos del más antiguo al más nuevo para la tabla
+  const sortedPayslips = [...payslips].reverse();
 
-  // Calculamos promedios
+  // Calculamos promedios usando la función getAmounts
   let totalNeto = 0;
   let totalBruto = 0;
   let count = 0;
 
   sortedPayslips.forEach(ps => {
-    if (ps.netPay || ps.grossPay) {
-      totalNeto += ps.netPay || 0;
-      totalBruto += ps.grossPay || 0;
+    const { grossPay, netPay } = getAmounts(ps);
+    if (grossPay > 0 || netPay > 0) {
+      totalNeto += netPay;
+      totalBruto += grossPay;
       count++;
     }
   });
@@ -29,12 +50,27 @@ export default function FinancialAnalyticsTab({ payslips }) {
   const avgNeto = count > 0 ? (totalNeto / count).toFixed(2) : 0;
   const avgBruto = count > 0 ? (totalBruto / count).toFixed(2) : 0;
 
+  // ¿Algún recibo tiene datos financieros?
+  const hasFinancialData = sortedPayslips.some(ps => {
+    const { grossPay, netPay } = getAmounts(ps);
+    return grossPay > 0 || netPay > 0;
+  });
+
   return (
     <div className="glass-panel">
       <h2><TrendingUp size={20} style={{ marginRight: '8px', verticalAlign: 'middle' }} /> Análisis Financiero</h2>
       <p style={{ fontSize: '14px', marginBottom: '24px' }}>
         Resumen de la evolución de tus remuneraciones netas y brutas a lo largo de los períodos liquidados.
       </p>
+
+      {!hasFinancialData && (
+        <div className="alert alert-warning" style={{ marginBottom: '24px', padding: '12px 16px', fontSize: '13px' }}>
+          <span>
+            Los importes financieros no pudieron extraerse automáticamente de los PDFs de este período.
+            Los montos se muestran como <b>-</b> cuando el recibo no contiene una capa de texto legible.
+          </span>
+        </div>
+      )}
 
       {count > 0 && (
         <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', marginBottom: '24px' }}>
@@ -67,15 +103,14 @@ export default function FinancialAnalyticsTab({ payslips }) {
           </thead>
           <tbody>
             {sortedPayslips.map(ps => {
-              const bruto = ps.grossPay || 0;
-              const neto = ps.netPay || 0;
-              const deducciones = bruto - neto;
-              
+              const { grossPay, netPay } = getAmounts(ps);
+              const deducciones = grossPay > 0 && netPay > 0 ? grossPay - netPay : 0;
+
               return (
                 <tr key={ps.id}>
-                  <td style={{ fontWeight: '600' }}>{ps.month}</td>
-                  <td>{bruto > 0 ? `$${bruto.toFixed(2)}` : '-'}</td>
-                  <td style={{ color: 'var(--success)' }}>{neto > 0 ? `$${neto.toFixed(2)}` : '-'}</td>
+                  <td style={{ fontWeight: '600' }}>{ps.month || ps.periodo || ps.period || '-'}</td>
+                  <td>{grossPay > 0 ? `$${grossPay.toFixed(2)}` : '-'}</td>
+                  <td style={{ color: 'var(--success)' }}>{netPay > 0 ? `$${netPay.toFixed(2)}` : '-'}</td>
                   <td style={{ color: 'var(--danger)' }}>{deducciones > 0 ? `$${deducciones.toFixed(2)}` : '-'}</td>
                 </tr>
               );
