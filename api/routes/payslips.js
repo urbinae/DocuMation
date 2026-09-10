@@ -404,6 +404,25 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
       analysis.cuil = matchedCuil || String(employee.cuil || '').replace(/\D/g, '');
       analysis.formattedCuil = pdfService.formatCUIL(analysis.cuil);
 
+      // Para uploads de Excel, los datos financieros siempre vienen del worksheet
+      // (fuente primaria, exacta y completa). El análisis del PDF por texto es el fallback
+      // para subidas de PDF individual, no para Excel.
+      // Celdas confirmadas con el archivo real:
+      //   grossPay    → fila 37, col F(6)  "Totales - Remuneración"
+      //   deductions  → fila 37, col G(7)  "Totales - Descuentos"
+      //   netPay      → fila 38, col G(7)  "Total Neto"
+      //   basicSalary → fila 11, col G(7)  "Rem. Básica"
+      const excelFinancial = pdfService.extractFinancialDataFromWorksheet(worksheet);
+      console.log('excelFinancial', excelFinancial);
+
+      // Siempre usar los datos del Excel si tiene algún valor; el PDF es fallback.
+      if (excelFinancial.grossPay > 0 || excelFinancial.netPay > 0) {
+        analysis.financialData = excelFinancial;
+      }
+      // Si el Excel no aportó datos (hoja sin importes), conservamos lo que extrajo el PDF.
+
+
+
       // Verificación si ya existe el recibo completo para ese mes
       const { data: existingPayslip } = await supabase
         .from('payslips')
@@ -453,6 +472,10 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
       if (dupStoragePath) {
         persistPayload.duplicado_storage_path = dupStoragePath;
         persistPayload.duplicado_hash = dupHash;
+      }
+      // Siempre actualizar financial_data si tenemos datos válidos
+      if (analysis.financialData && (analysis.financialData.grossPay > 0 || analysis.financialData.netPay > 0)) {
+        persistPayload.financial_data = analysis.financialData;
       }
 
       if (existingPayslip) {
@@ -1180,6 +1203,58 @@ router.post('/schedule', async (req, res) => {
     res.status(500).json({ error: 'Error al programar recibos', details: err.message });
   }
 });
+
+/**
+ * PATCH /api/payslips/:id/financial-data
+ * Actualiza manualmente los datos financieros (grossPay, netPay, deductions, basicSalary)
+ * de un recibo existente. Útil cuando la extracción automática del PDF falló.
+ */
+router.patch('/:id/financial-data', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { grossPay, netPay, deductions, basicSalary } = req.body;
+
+    if (typeof grossPay !== 'number' && typeof netPay !== 'number') {
+      return res.status(400).json({ error: 'Debe proveer al menos grossPay o netPay como número' });
+    }
+
+    const { data: existing, error: fetchErr } = await supabase
+      .from('payslips')
+      .select('id, financial_data')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr || !existing) {
+      return res.status(404).json({ error: 'Recibo no encontrado' });
+    }
+
+    const updatedFinancialData = {
+      ...(existing.financial_data || {}),
+      ...(typeof grossPay === 'number' ? { grossPay } : {}),
+      ...(typeof netPay === 'number' ? { netPay } : {}),
+      ...(typeof deductions === 'number' ? { deductions } : {}),
+      ...(typeof basicSalary === 'number' ? { basicSalary } : {})
+    };
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('payslips')
+      .update({ financial_data: updatedFinancialData })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    res.json({
+      success: true,
+      message: 'Datos financieros actualizados correctamente',
+      payslip: enrichPayslipWithUrls(updated)
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al actualizar datos financieros', details: err.message });
+  }
+});
+
 
 module.exports = {
   payslipsRouter: router,

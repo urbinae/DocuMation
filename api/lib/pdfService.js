@@ -58,17 +58,43 @@ async function generatePayslipsZipFromExcel(fileBuffer, month, originalFilename 
 /**
  * Extrae un payload mínimo para alimentar la plantilla maestra del microservicio
  * de recibos desde una hoja de Excel.
- * @param {object} worksheet
+ *
+ * Mapa de celdas confirmado con el archivo real "Recibos Sueldos -para prueba.xls.xlsx":
+ *   Fila 7  col G(7)  → CUIL
+ *   Fila 8  col B(2)  → Período abonado
+ *   Fila 8  col C(3)  → Nombre/Apellido
+ *   Fila 9  col G(7)  → Obra Social
+ *   Fila 10 col B(2)  → Banco
+ *   Fila 11 col C(3)  → Período Seg. Social
+ *   Fila 11 col D(4)  → Fecha Depósito
+ *   Fila 11 col E(5)  → Tarea/Puesto
+ *   Fila 11 col F(6)  → Fecha Ingreso
+ *   Fila 11 col G(7)  → Rem. Básica  ← basicSalary
+ *   Fila 13 col F(6)  → Remuneración (bruto parcial, sin adicionales)
+ *   Fila 18 col F(6)  → A cuenta futuros aumentos
+ *   Fila 22 col G(7)  → Jubilación (11%)
+ *   Fila 23 col G(7)  → I.N.S.S.J.P. (3%)
+ *   Fila 24 col G(7)  → Obra Social (3%)
+ *   Fila 37 col F(6)  → TOTAL BRUTO (Totales - columna Remuneración) ← grossPay
+ *   Fila 37 col G(7)  → TOTAL DESCUENTOS (Totales - columna Descuentos) ← deductions
+ *   Fila 38 col G(7)  → TOTAL NETO  ← netPay
+ *
+ * @param {object} worksheet  ExcelJS worksheet object
  * @returns {object}
  */
 function extractReceiptFieldsFromWorksheet(worksheet) {
+  /**
+   * Lee el texto de una celda (maneja fórmulas, richText, fechas, números).
+   */
   const readCell = (row, col) => {
     const targetRow = worksheet.getRow ? worksheet.getRow(row) : null;
     if (!targetRow) return '';
     const cell = targetRow.getCell(col);
     if (!cell || cell.value == null) return '';
+    // Para evitar que las fechas aparezcan como timestamps, usamos text si existe
     if (cell.text != null && cell.text !== '') return String(cell.text).trim();
     if (typeof cell.value === 'object') {
+      if (cell.value instanceof Date) return '';           // ignorar fechas en campos de texto
       if (cell.value.result != null) return String(cell.value.result).trim();
       if (Array.isArray(cell.value.richText)) return cell.value.richText.map(rt => rt.text || '').join('').trim();
       if (cell.value.text != null) return String(cell.value.text).trim();
@@ -77,25 +103,76 @@ function extractReceiptFieldsFromWorksheet(worksheet) {
     return String(cell.value).trim();
   };
 
+  /**
+   * Lee el valor NUMÉRICO de una celda (fórmulas, números directo).
+   * Retorna el número o 0 si no es numérico/no existe.
+   */
+  const readNumeric = (row, col) => {
+    const targetRow = worksheet.getRow ? worksheet.getRow(row) : null;
+    if (!targetRow) return 0;
+    const cell = targetRow.getCell(col);
+    if (!cell || cell.value == null) return 0;
+    if (typeof cell.value === 'number') return cell.value;
+    if (typeof cell.value === 'object') {
+      if (cell.value instanceof Date) return 0;
+      if (typeof cell.value.result === 'number') return cell.value.result;
+      if (typeof cell.value.result === 'string') {
+        const n = parseFloat(String(cell.value.result).replace(',', '.'));
+        return isNaN(n) ? 0 : n;
+      }
+    }
+    const n = parseFloat(String(cell.value).replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+  };
+
   const normalize = (value) => (value == null ? '' : String(value).trim());
+
   return {
-    nombre_apellido: normalize(readCell(8, 3) || readCell(8, 2) || readCell(7, 3)),
-    periodo_abonado: normalize(readCell(8, 2) || readCell(8, 1) || readCell(8, 3)),
-    cuil: normalize(readCell(7, 7) || readCell(7, 8)),
-    obra_social: normalize(readCell(9, 7) || readCell(9, 8)),
-    banco: normalize(readCell(11, 2)),
+    nombre_apellido: normalize(readCell(8, 3) || readCell(8, 2)),
+    periodo_abonado: normalize(readCell(8, 2)),
+    cuil: normalize(readCell(7, 7)),
+    obra_social: normalize(readCell(9, 7)),
+    banco: normalize(readCell(10, 2)),
     periodo_seg_soc: normalize(readCell(11, 3)),
     fecha_deposito: normalize(readCell(11, 4)),
     tarea: normalize(readCell(11, 5)),
     fecha_ingreso: normalize(readCell(11, 6)),
-    rem_basica: normalize(readCell(11, 7)),
-    remuneracion: normalize(readCell(13, 6) || readCell(13, 7)),
-    a_cuenta_futuros_aumentos: normalize(readCell(18, 6) || readCell(18, 7)),
-    importe_jubilacion: normalize(readCell(22, 7) || readCell(22, 8)),
-    importe_inssjp: normalize(readCell(23, 7) || readCell(23, 8)),
-    importe_obra_social_desc: normalize(readCell(24, 7) || readCell(24, 8))
+    // ── Montos (numérico directo) ──────────────────────────────────────────────
+    rem_basica: readNumeric(11, 7),   // Remuneración Básica
+    remuneracion: readNumeric(13, 6),   // Remuneración parcial (fila 13 col F)
+    a_cuenta_futuros_aumentos: readNumeric(18, 6),   // Adicional (fila 18 col F)
+    importe_jubilacion: readNumeric(22, 7),   // Jubilación 11% (fila 22 col G)
+    importe_inssjp: readNumeric(23, 7),   // INSSJP 3% (fila 23 col G)
+    importe_obra_social_desc: readNumeric(24, 7),   // Obra Social 3% (fila 24 col G)
+    // ── Totales (línea "Totales" - fila 37) ────────────────────────────────────
+    total_bruto: readNumeric(37, 6),  // grossPay  → fila 37 col F
+    total_descuentos: readNumeric(37, 7),  // deductions→ fila 37 col G
+    total_neto: readNumeric(38, 7),  // netPay    → fila 38 col G
   };
 }
+
+/**
+ * Extrae los datos financieros (grossPay, netPay, deductions, basicSalary)
+ * directamente de las celdas del worksheet de Excel.
+ * Más confiable que parsear el texto del PDF generado (que puede ser imagen sin capa de texto).
+ *
+ * @param {object} worksheet  ExcelJS worksheet object
+ * @returns {{ grossPay: number, netPay: number, deductions: number, basicSalary: number }}
+ */
+function extractFinancialDataFromWorksheet(worksheet) {
+  console.log("Extraccion de datos del excel con extractFinancialDataFromWorksheet");
+  const fields = extractReceiptFieldsFromWorksheet(worksheet);
+  const result = {
+    grossPay: fields.total_bruto,
+    netPay: fields.total_neto,
+    deductions: fields.total_descuentos,
+    basicSalary: fields.rem_basica
+  };
+
+  console.log(result);
+  return result;
+}
+
 
 /**
  * Valida el formato y el dígito verificador Módulo 11 de un CUIL/CUIT argentino.
@@ -241,6 +318,7 @@ async function analyzeBuffer(fileBuffer, originalFilename = '') {
  * @returns {object}
  */
 function extractFinancialData(text) {
+  console.log("Extraccion de datos del excel con extractFinancialData()");
   const result = {
     netPay: 0,
     grossPay: 0,
@@ -264,6 +342,7 @@ function extractFinancialData(text) {
   result.grossPay = parseAmount(/(?:total\s+bruto|remunerativo|total\s+remunerativo|subtotal)\s*[:$]?\s*([\d.,]+)/i);
   result.deductions = parseAmount(/(?:total\s+descuentos|retenciones|descuentos)\s*[:$]?\s*([\d.,]+)/i);
   result.basicSalary = parseAmount(/(?:sueldo\s+basico|basico)\s*[:$]?\s*([\d.,]+)/i);
+  console.log(result);
 
   return result;
 }
@@ -307,7 +386,7 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
 
   // ── 3. Incrustar la imagen de firma ─────────────────────────────────────────
   let sigImage = null;
-  let sigDims  = { width: 0, height: 0 };
+  let sigDims = { width: 0, height: 0 };
 
   if (typeof signatureBase64 === 'string' && signatureBase64.includes('base64,')) {
     const [header, b64data] = signatureBase64.split('base64,');
@@ -321,7 +400,7 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
       }
 
       // Dimensiones deseadas de la imagen en el PDF
-      const sigW = typeof metadata.position?.width  === 'number' ? metadata.position.width  : 160;
+      const sigW = typeof metadata.position?.width === 'number' ? metadata.position.width : 160;
       const sigH = typeof metadata.position?.height === 'number' ? metadata.position.height : 60;
       sigDims = sigImage.scale(Math.min(sigW / sigImage.width, sigH / sigImage.height));
     } catch (imgErr) {
@@ -330,7 +409,7 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
   }
 
   // ── 4. Calcular posición XY en coordenadas pdf-lib (origen = esquina inf-izq) ─
-  const MARGIN  = 24;
+  const MARGIN = 24;
   const AUDIT_H = 44; // altura reservada para el bloque de texto de auditoría
 
   // X: posición de la imagen de firma
@@ -348,25 +427,25 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
   // ── 5. Dibujar imagen de firma ───────────────────────────────────────────────
   if (sigImage) {
     targetPage.drawImage(sigImage, {
-      x:      sigX,
-      y:      sigY,
-      width:  sigDims.width,
+      x: sigX,
+      y: sigY,
+      width: sigDims.width,
       height: sigDims.height,
     });
   }
 
   // ── 6. Dibujar bloque de auditoría ───────────────────────────────────────────
-  const font    = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const FONT_SZ = 6.5;
-  const LINE_H  = 9;
-  const textX   = MARGIN;
+  const LINE_H = 9;
+  const textX = MARGIN;
   const auditColor = rgb(0.35, 0.35, 0.35);
 
   const auditLines = [
     `Firmado electrónicamente${metadata.name ? ` por: ${metadata.name}` : ''}`,
     [
-      metadata.cuil      && `CUIL: ${metadata.cuil}`,
-      metadata.ip        && `IP: ${metadata.ip}`,
+      metadata.cuil && `CUIL: ${metadata.cuil}`,
+      metadata.ip && `IP: ${metadata.ip}`,
       metadata.timestamp && `Fecha: ${metadata.timestamp}`,
     ].filter(Boolean).join('   |   '),
     metadata.token ? `Token: ${metadata.token}` : null,
@@ -374,19 +453,19 @@ async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
 
   // Línea separadora
   targetPage.drawLine({
-    start: { x: MARGIN,             y: MARGIN + AUDIT_H - 2 },
-    end:   { x: pageWidth - MARGIN, y: MARGIN + AUDIT_H - 2 },
+    start: { x: MARGIN, y: MARGIN + AUDIT_H - 2 },
+    end: { x: pageWidth - MARGIN, y: MARGIN + AUDIT_H - 2 },
     thickness: 0.5,
     color: rgb(0.7, 0.7, 0.7),
   });
 
   auditLines.forEach((line, idx) => {
     targetPage.drawText(line, {
-      x:        textX,
-      y:        MARGIN + AUDIT_H - 14 - idx * LINE_H,
-      size:     FONT_SZ,
+      x: textX,
+      y: MARGIN + AUDIT_H - 14 - idx * LINE_H,
+      size: FONT_SZ,
       font,
-      color:    auditColor,
+      color: auditColor,
       maxWidth: pageWidth - MARGIN * 2,
     });
   });
@@ -404,6 +483,7 @@ module.exports = {
   analyzeBuffer,
   extractFinancialData,
   extractReceiptFieldsFromWorksheet,
+  extractFinancialDataFromWorksheet,
   generatePayslipsZipFromExcel,
   signPdfBuffer
 };
