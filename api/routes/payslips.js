@@ -854,8 +854,16 @@ async function viewPayslipHandler(req, res) {
     }
 
     const buffer = Buffer.from(await blob.arrayBuffer());
+    const empName = payslip.employees?.name || payslip.employee_name || 'recibo';
+    const safeName = String(empName).replace(/[^a-zA-Z0-9_\- ]/g, '').trim();
+    const period = payslip.month || '0000-00';
+    let typeDisplay = 'Original';
+    if (requestedType === 'duplicado') typeDisplay = 'Duplicado';
+    if (requestedType === 'signed') typeDisplay = 'Firmado';
+    const viewFilename = `${period} Recibo de Sueldo ${safeName} - ${typeDisplay}.pdf`;
+
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${requestedType}_${payslip.id}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="${viewFilename}"`);
     return res.send(buffer);
   } catch (err) {
     console.error('Error en viewPayslipHandler:', err);
@@ -953,8 +961,12 @@ async function downloadHandler(req, res) {
 
     const buffer = Buffer.from(await blob.arrayBuffer());
     const empName = payslip.employees?.name || payslip.employee_name || 'recibo';
-    const safeName = String(empName).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const downloadFilename = `Recibo_${requestedType}_${safeName}_${payslip.month || payslip.id}.pdf`;
+    const safeName = String(empName).replace(/[^a-zA-Z0-9_\- ]/g, '').trim();
+    const period = payslip.month || '0000-00';
+    let typeDisplay = 'Original';
+    if (requestedType === 'duplicado') typeDisplay = 'Duplicado';
+    if (requestedType === 'signed') typeDisplay = 'Firmado';
+    const downloadFilename = `${period} Recibo de Sueldo ${safeName} - ${typeDisplay}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);

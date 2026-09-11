@@ -227,8 +227,8 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
                               {hasOriginal ? (
                                 <a
                                   href={`${API_BASE}/api/download/original/${ps.id}`}
-                                  download={`Recibo_Original_${ps.month || ps.id}.pdf`}
-                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/original/${ps.id}`, `Recibo_Original_${ps.month || ps.id}.pdf`)}
+                                  download={`${ps.month || '0000-00'} Recibo de Sueldo ${employee.name} - Original.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/original/${ps.id}`, `${ps.month || '0000-00'} Recibo de Sueldo ${employee.name} - Original.pdf`)}
                                   className="btn btn-secondary"
                                   style={{ padding: '6px 12px', fontSize: '12px' }}
                                 >
@@ -243,8 +243,8 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
                               {isSigned ? (
                                 <a
                                   href={`${API_BASE}/api/download/signed/${ps.id}`}
-                                  download={`Recibo_Firmado_${ps.month || ps.id}.pdf`}
-                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${ps.id}`, `Recibo_Firmado_${ps.month || ps.id}.pdf`)}
+                                  download={`${ps.month || '0000-00'} Recibo de Sueldo ${employee.name} - Firmado.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${ps.id}`, `${ps.month || '0000-00'} Recibo de Sueldo ${employee.name} - Firmado.pdf`)}
                                   className="btn btn-secondary"
                                   style={{ padding: '6px 12px', fontSize: '12px' }}
                                 >
@@ -254,8 +254,8 @@ export default function EmployeeDashboard({ employee, handleLogout, theme, toggl
                               ) : hasDuplicado ? (
                                 <a
                                   href={`${API_BASE}/api/download/duplicado/${ps.id}`}
-                                  download={`Recibo_Duplicado_${ps.month || ps.id}.pdf`}
-                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/duplicado/${ps.id}`, `Recibo_Duplicado_${ps.month || ps.id}.pdf`)}
+                                  download={`${ps.month || '0000-00'} Recibo de Sueldo ${employee.name} - Duplicado.pdf`}
+                                  onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/duplicado/${ps.id}`, `${ps.month || '0000-00'} Recibo de Sueldo ${employee.name} - Duplicado.pdf`)}
                                   className="btn btn-secondary"
                                   style={{ padding: '6px 12px', fontSize: '12px' }}
                                 >
