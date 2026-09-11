@@ -69,7 +69,6 @@ En la misma pantalla de configuración, despliega la sección **"Environment Var
 | `SUPABASE_URL` | `https://tu-proyecto.supabase.co` | URL de tu proyecto Supabase (Paso 2.4) |
 | `SUPABASE_SERVICE_ROLE_KEY`| `eyJhbGciOi...` | Clave secreta service_role (Paso 2.4) |
 | `COMPANY_NAME` | `e-ABC Learning` | Nombre de la compañía |
-| `GROQ_API_KEY` | `gsk_tu_clave` | Clave de Groq para módulo de IA (Opcional) |
 | `SMTP_HOST` | `smtp.proveedor.com` | Host SMTP para envío de correos |
 | `SMTP_PORT` | `587` | Puerto SMTP |
 | `SMTP_USER` | `usuario@dominio.com` | Usuario SMTP |
@@ -79,7 +78,7 @@ En la misma pantalla de configuración, despliega la sección **"Environment Var
 | `GOOGLE_ALLOWED_DOMAIN`| `tudominio.com` | Dominio permitido para login con Google |
 | `RECIBOS_SERVICE_URL` | `https://recibos.e-abc.com` | URL del microservicio procesador de recibos de sueldo (Python/LibreOffice) |
 
-*Nota: No es necesario configurar `BASE_URL` o `FRONTEND_URL` ya que Vercel se encarga del ruteo en el mismo dominio a través de `/api` para el backend.*
+
 
 ### Paso 3.4: Desplegar
 1. Haz clic en el botón **"Deploy"**.
