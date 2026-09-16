@@ -24,6 +24,6 @@ dist-ssr
 *.sw?
 
 .env
-#.agents/*
+.agents/*
 #.antigravity/*
 #docs
