@@ -13,7 +13,7 @@ Este documento detalla la arquitectura técnica, los algoritmos y los flujos de 
 *   **Framework:** Express.js (Node.js)
 *   **Gestión de Subidas (Multipart/form-data):** `multer`. Los archivos se guardan inicialmente en una carpeta temporal (`TEMP_DIR`).
 *   **Manipulación y División de PDF:** Librería `pdf-lib`. Se utiliza para crear, copiar y recortar (crop) páginas de un PDF.
-*   **Procesamiento de Excel:** Script nativo de Windows (`excel_to_pdf.ps1` usando PowerShell) invocado vía `child_process.exec`. Convierte hojas de cálculo a PDF de manera asíncrona para conservar el diseño de impresión nativo.
+*   **Procesamiento de Excel:** Microservicio externo basado en Python y LibreOffice (Docker). Convierte hojas de cálculo a PDF de manera asíncrona para conservar el diseño de impresión nativo, debido a las limitaciones de Vercel (Serverless).
 *   **Extracción de Texto/Datos:** Módulo interno `pdfService.analyzeFile()`.
 *   **Almacenamiento (MVP):** Archivo plano en disco (`db.json`) manejado por un adaptador interno (`db.getEmployees`, `db.savePayslip`).
 *   **Deduplicación:** Hash criptográfico `SHA-256` utilizando el módulo nativo `crypto`.
@@ -53,11 +53,11 @@ Un recibo en el sistema es un único registro que contiene referencias a dos arc
 
 Este es el flujo más complejo, diseñado para procesar el archivo unificado de la contabilidad.
 
-### 3.1. Conversión Asíncrona (PowerShell)
-Dado que las librerías nativas de Node a menudo pierden el formato visual de Excel, el sistema delega la renderización a Windows:
-1.  Se ejecuta `excel_to_pdf.ps1` inyectándole el `tempPath` del archivo Excel.
-2.  El script abre Excel en background, itera por cada hoja visible, y la exporta como un PDF individual a una carpeta temporal (`TEMP_DIR/excel_export`).
-3.  El script retorna por salida estándar (`stdout`) un JSON con el array de rutas generadas.
+### 3.1. Conversión Asíncrona (Microservicio Externo)
+Dado que las librerías nativas de Node a menudo pierden el formato visual de Excel y Vercel no soporta herramientas ofimáticas nativas, el sistema delega la renderización a un microservicio independiente:
+1.  Se envía el archivo Excel al microservicio (vía petición HTTP a la URL definida en `RECIBOS_SERVICE_URL`).
+2.  El microservicio, ejecutado en un contenedor Docker con Python y LibreOffice, abre el Excel en background, itera por cada hoja visible y la exporta como un PDF individual.
+3.  El microservicio responde con un archivo ZIP o una lista de archivos PDF generados, que el backend de Node.js procesa temporalmente.
 
 > [!TIP]
 > **Server-Sent Events (SSE):** Durante todo este proceso masivo, el frontend puede suscribirse a `/api/payslips/upload-progress/:jobId` para recibir actualizaciones en tiempo real (SSE) sobre qué hoja se está procesando (actual vs. total).

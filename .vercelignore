@@ -4,5 +4,8 @@ node_modules
 .env
 .env.example
 *.md
-Documentacion_MVP.html
-supabase_schema.sql
+docs
+tests
+supabase
+filestests
+micro-servicio
