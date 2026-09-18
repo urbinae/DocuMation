@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Users, Mail, AlertTriangle, Send, CheckCircle } from 'lucide-react';
+import { AlertTriangle, Send, CheckCircle } from 'lucide-react';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
 
 export default function DebtorsTab({ payslips, employees, refreshData, triggerAlert }) {
-  const [isSending, setIsSending] = useState(false);
+  const [sendingIds, setSendingIds] = useState(new Set()); // employeeIds en curso
 
   // Filtrar solo los enviados que no han sido firmados
   const sentPayslips = payslips.filter(p => p.status === 'Enviado');
@@ -43,8 +43,8 @@ export default function DebtorsTab({ payslips, employees, refreshData, triggerAl
   const handleSendReminder = async (employeeId) => {
     const debtor = groupedDebtors[employeeId];
     if (!debtor) return;
-    
-    setIsSending(true);
+
+    setSendingIds(prev => new Set(prev).add(employeeId));
     try {
       const ids = debtor.payslips.map(p => p.id);
       const res = await fetch(`${API_BASE}/api/payslips/send-bulk`, {
@@ -59,7 +59,7 @@ export default function DebtorsTab({ payslips, employees, refreshData, triggerAl
     } catch (e) {
       triggerAlert('error', e.message);
     } finally {
-      setIsSending(false);
+      setSendingIds(prev => { const s = new Set(prev); s.delete(employeeId); return s; });
     }
   };
 
@@ -92,45 +92,69 @@ export default function DebtorsTab({ payslips, employees, refreshData, triggerAl
               </tr>
             </thead>
             <tbody>
-              {debtorsList.map(debtor => (
-                <tr key={debtor.employeeId}>
-                  <td style={{ fontWeight: '600' }}>{debtor.name}</td>
-                  <td>{debtor.cuil}</td>
-                  <td>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {debtor.payslips.map(p => (
-                        <span key={p.id} style={{
-                          background: 'rgba(255,255,255,0.05)',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          border: '1px solid rgba(255,255,255,0.1)'
-                        }}>
-                          {p.month}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td>
-                    <span style={{ 
-                      color: debtor.avgDelay > 7 ? 'var(--danger)' : debtor.avgDelay > 3 ? 'var(--warning)' : 'var(--text-primary)',
-                      fontWeight: debtor.avgDelay > 3 ? 'bold' : 'normal'
-                    }}>
-                      {debtor.avgDelay} días
-                    </span>
-                  </td>
-                  <td>
-                    <button 
-                      className="btn btn-secondary" 
-                      style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                      onClick={() => handleSendReminder(debtor.employeeId)}
-                      disabled={isSending}
-                    >
-                      <Send size={14} /> Reenviar Todo
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {debtorsList.map(debtor => {
+                const isSending = sendingIds.has(debtor.employeeId);
+                return (
+                  <tr key={debtor.employeeId}>
+                    <td style={{ fontWeight: '600' }}>{debtor.name}</td>
+                    <td>{debtor.cuil}</td>
+                    <td>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {debtor.payslips.map(p => (
+                          <span key={p.id} style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            border: '1px solid rgba(255,255,255,0.1)'
+                          }}>
+                            {p.month}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <span style={{
+                        color: debtor.avgDelay > 7 ? 'var(--danger)' : debtor.avgDelay > 3 ? 'var(--warning)' : 'var(--text-primary)',
+                        fontWeight: debtor.avgDelay > 3 ? 'bold' : 'normal'
+                      }}>
+                        {debtor.avgDelay} días
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-secondary"
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          minWidth: '120px',
+                          justifyContent: 'center'
+                        }}
+                        onClick={() => handleSendReminder(debtor.employeeId)}
+                        disabled={isSending}
+                      >
+                        {isSending ? (
+                          <>
+                            <span
+                              className="excel-loading-spinner"
+                              style={{ width: '13px', height: '13px', borderWidth: '2px' }}
+                            />
+                            Enviando...
+                          </>
+                        ) : (
+                          <>
+                            <Send size={13} />
+                            Reenviar Todo
+                          </>
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

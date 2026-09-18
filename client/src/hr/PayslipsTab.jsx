@@ -45,6 +45,10 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
   const [payslipToDelete, setPayslipToDelete] = useState(null); // { id, name }
   const [isDeletingSingle, setIsDeletingSingle] = useState(false);
 
+  // Loading de envío
+  const [isSendingId, setIsSendingId] = useState(new Set()); // IDs envio individual en curso
+  const [isBulkSending, setIsBulkSending] = useState(false);
+
   // Recorrer recursivamente las entradas del file system para arrastrar carpetas
   const traverseFileSystemEntry = async (entry) => {
     return new Promise((resolve) => {
@@ -340,6 +344,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
   };
 
   const sendInvitation = async (id) => {
+    setIsSendingId(prev => new Set(prev).add(id));
     try {
       const res = await fetch(`${API_BASE}/api/payslips/send/${id}`, { method: 'POST' });
       const data = await res.json();
@@ -348,6 +353,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
       refreshData();
     } catch (e) {
       triggerAlert('error', e.message);
+    } finally {
+      setIsSendingId(prev => { const s = new Set(prev); s.delete(id); return s; });
     }
   };
 
@@ -471,8 +478,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
       return;
     }
 
-    if (!window.confirm(`¿Deseas enviar invitaciones de firma por email a ${unsentList.length} empleados?`)) return;
-
+    setIsBulkSending(true);
     try {
       const res = await fetch(`${API_BASE}/api/payslips/send-bulk`, {
         method: 'POST',
@@ -484,6 +490,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
       refreshData();
     } catch (e) {
       triggerAlert('error', e.message);
+    } finally {
+      setIsBulkSending(false);
     }
   };
 
@@ -649,9 +657,10 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
 
               <button
                 className="btn btn-primary"
-                disabled={safePayslips.length === 0}
+                disabled={safePayslips.length === 0 || isBulkSending}
                 style={{
-                  cursor: safePayslips.length === 0 ? 'not-allowed' : 'pointer'
+                  cursor: (safePayslips.length === 0 || isBulkSending) ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '6px'
                 }}
                 onClick={() => {
                   const unsentList = filteredPayslips.filter(p =>
@@ -668,8 +677,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                   setShowScheduleModal(true);
                 }}
               >
-                <Send size={15} style={{ marginRight: '4px' }} />
-                Enviar Lote
+                {isBulkSending
+                  ? <><span className="excel-loading-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} /> Enviando...</>
+                  : <><Send size={15} /> Enviar Lote</>}
               </button>
 
               <a
@@ -806,12 +816,14 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                               <>
                                 <button
                                   className="btn btn-secondary"
-                                  style={{ padding: '6px 10px' }}
+                                  style={{ padding: '6px 10px', minWidth: '34px' }}
                                   onClick={() => sendInvitation(ps.id)}
                                   title="Enviar solicitud inmediatamente"
-                                  disabled={!ps.employeeId}
+                                  disabled={!ps.employeeId || isSendingId.has(ps.id)}
                                 >
-                                  <Mail size={14} />
+                                  {isSendingId.has(ps.id)
+                                    ? <span className="excel-loading-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
+                                    : <Mail size={14} />}
                                 </button>
                                 <button
                                   className="btn btn-secondary"
@@ -858,12 +870,14 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             {hasDup && ps.status === 'Enviado' && (
                               <button
                                 className="btn btn-secondary"
-                                style={{ padding: '6px 10px' }}
+                                style={{ padding: '6px 10px', minWidth: '34px' }}
                                 onClick={() => sendInvitation(ps.id)}
                                 title="Re-enviar recordatorio"
-                                disabled={!ps.employeeId}
+                                disabled={!ps.employeeId || isSendingId.has(ps.id)}
                               >
-                                <Mail size={14} />
+                                {isSendingId.has(ps.id)
+                                  ? <span className="excel-loading-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
+                                  : <Mail size={14} />}
                               </button>
                             )}
 
@@ -942,7 +956,8 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
             <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
               <button
                 className="btn btn-secondary"
-                style={{ flex: 1 }}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                disabled={isBulkSending}
                 onClick={() => {
                   setShowScheduleModal(false);
                   if (selectedScheduleIds.length === 1) {
@@ -952,7 +967,9 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                   }
                 }}
               >
-                Enviar Ahora
+                {isBulkSending
+                  ? <><span className="excel-loading-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} /> Enviando...</>
+                  : 'Enviar Ahora'}
               </button>
               <button
                 className="btn btn-primary"
