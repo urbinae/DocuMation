@@ -382,6 +382,41 @@ p {
   transform: translateY(-4px);
 }
 
+/* Estado de carga (uploading) del upload-zone */
+.upload-zone.uploading {
+  cursor: not-allowed;
+  pointer-events: none;
+  border-color: var(--primary);
+  background: var(--upload-bg-hover);
+  box-shadow: var(--shadow-glow);
+}
+
+/* Spinner de carga */
+@keyframes spin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.excel-loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(165, 194, 63, 0.2);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.excel-loading-text {
+  animation: pulse-glow 1.5s ease-in-out infinite;
+  color: var(--primary);
+  font-weight: 600;
+}
+
 /* Formularios y Inputs */
 .form-group {
   margin-bottom: 20px;

@@ -413,7 +413,6 @@ router.post('/upload-excel', fileUploadMiddleware, async (req, res) => {
       //   netPay      → fila 38, col G(7)  "Total Neto"
       //   basicSalary → fila 11, col G(7)  "Rem. Básica"
       const excelFinancial = pdfService.extractFinancialDataFromWorksheet(worksheet);
-      console.log('excelFinancial', excelFinancial);
 
       // Siempre usar los datos del Excel si tiene algún valor; el PDF es fallback.
       if (excelFinancial.grossPay > 0 || excelFinancial.netPay > 0) {

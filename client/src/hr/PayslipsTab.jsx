@@ -531,39 +531,56 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
           </div>
 
           <div
-            className={`upload-zone ${isDragOver ? 'dragover' : ''}`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
+            className={`upload-zone ${isDragOver ? 'dragover' : ''} ${uploading ? 'uploading' : ''}`}
+            onDragOver={!uploading ? handleDragOver : undefined}
+            onDragLeave={!uploading ? handleDragLeave : undefined}
+            onDrop={!uploading ? handleDrop : undefined}
             onClick={(e) => {
+              if (uploading) return;
               if (e.target.closest('.btn-folder')) return;
               document.getElementById('file-input').click();
             }}
           >
-            <FileUp size={48} />
-            <div>
-              <p style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
-                {uploading ? "Procesando archivos..." : "Arrastra PDFs, Excel (.xls, .xlsx) o carpetas aquí"}
-              </p>
-              <p style={{ fontSize: '12px', marginTop: '4px' }}>
-                O haz clic para explorar archivos en tu equipo
-              </p>
-            </div>
+            {uploading ? (
+              <>
+                <div className="excel-loading-spinner" />
+                <div>
+                  <p className="excel-loading-text" style={{ fontSize: '15px' }}>
+                    Procesando Excel...
+                  </p>
+                  <p style={{ fontSize: '12px', marginTop: '6px', color: 'var(--text-secondary)' }}>
+                    Esto puede tardar unos segundos
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <FileUp size={48} />
+                <div>
+                  <p style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
+                    Arrastra PDFs, Excel (.xls, .xlsx) o carpetas aquí
+                  </p>
+                  <p style={{ fontSize: '12px', marginTop: '4px' }}>
+                    O haz clic para explorar archivos en tu equipo
+                  </p>
+                </div>
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-              <button
-                type="button"
-                className="btn btn-secondary btn-folder"
-                style={{ padding: '6px 12px', fontSize: '12px' }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  document.getElementById('folder-input').click();
-                }}
-              >
-                <FolderUp size={14} />
-                Seleccionar Carpeta
-              </button>
-            </div>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-folder"
+                    style={{ padding: '6px 12px', fontSize: '12px' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      document.getElementById('folder-input').click();
+                    }}
+                  >
+                    <FolderUp size={14} />
+                    Seleccionar Carpeta
+                  </button>
+                </div>
+              </>
+            )}
 
             <input
               type="file"
