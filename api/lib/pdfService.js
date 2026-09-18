@@ -1,6 +1,7 @@
 const pdfParse = require('pdf-parse');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
+const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
 /**
  * Envía el Excel COMPLETO (multipart/form-data: file + month) al microservicio
@@ -160,7 +161,6 @@ function extractReceiptFieldsFromWorksheet(worksheet) {
  * @returns {{ grossPay: number, netPay: number, deductions: number, basicSalary: number }}
  */
 function extractFinancialDataFromWorksheet(worksheet) {
-  console.log("Extraccion de datos del excel con extractFinancialDataFromWorksheet");
   const fields = extractReceiptFieldsFromWorksheet(worksheet);
   const result = {
     grossPay: fields.total_bruto,
@@ -169,7 +169,6 @@ function extractFinancialDataFromWorksheet(worksheet) {
     basicSalary: fields.rem_basica
   };
 
-  console.log(result);
   return result;
 }
 
@@ -318,7 +317,6 @@ async function analyzeBuffer(fileBuffer, originalFilename = '') {
  * @returns {object}
  */
 function extractFinancialData(text) {
-  console.log("Extraccion de datos del excel con extractFinancialData()");
   const result = {
     netPay: 0,
     grossPay: 0,
@@ -342,7 +340,6 @@ function extractFinancialData(text) {
   result.grossPay = parseAmount(/(?:total\s+bruto|remunerativo|total\s+remunerativo|subtotal)\s*[:$]?\s*([\d.,]+)/i);
   result.deductions = parseAmount(/(?:total\s+descuentos|retenciones|descuentos)\s*[:$]?\s*([\d.,]+)/i);
   result.basicSalary = parseAmount(/(?:sueldo\s+basico|basico)\s*[:$]?\s*([\d.,]+)/i);
-  console.log(result);
 
   return result;
 }
@@ -367,62 +364,63 @@ function extractFinancialData(text) {
  * @returns {Promise<Buffer>}      Buffer del PDF con la firma estampada
  */
 async function signPdfBuffer(pdfBuffer, signatureBase64, metadata = {}) {
-  if (!pdfBuffer || pdfBuffer.length === 0) return Buffer.alloc(0);
+  if (!pdfBuffer) return Buffer.alloc(0);
 
-  const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
+  const pdfDoc = await PDFDocument.load(pdfBuffer);
 
-  // ── 1. Cargar el documento ──────────────────────────────────────────────────
-  const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+  const MARGIN = 24, AUDIT_H = 44;
+  let pageIndex, targetPage, pageWidth, pageHeight, scaleX, scaleY, sigImage, sigDims, sigX, sigY;
 
-  // ── 2. Determinar en qué página colocar la firma ────────────────────────────
-  const pages = pdfDoc.getPages();
-  const pageIndex =
-    typeof metadata.position?.page === 'number'
-      ? Math.max(0, Math.min(metadata.position.page, pages.length - 1))
-      : pages.length - 1; // última página por defecto
+  try {
+    // ── 2. Determinar en qué página colocar la firma ──────────────────────
+    const pages = pdfDoc.getPages();
+    const rawPage = metadata.position?.page;
+    pageIndex = typeof rawPage === 'number'
+      ? Math.max(0, Math.min(rawPage - 1, pages.length - 1))
+      : pages.length - 1;
 
-  const targetPage = pages[pageIndex];
-  const { width: pageWidth, height: pageHeight } = targetPage.getSize();
+    targetPage = pages[pageIndex];
+    ({ width: pageWidth, height: pageHeight } = targetPage.getSize());
 
-  // ── 3. Incrustar la imagen de firma ─────────────────────────────────────────
-  let sigImage = null;
-  let sigDims = { width: 0, height: 0 };
+    const renderedW = Number(metadata.position?.pdfWidth) || 0;
+    const renderedH = Number(metadata.position?.pdfHeight) || 0;
+    scaleX = renderedW > 0 ? pageWidth / renderedW : 1;
+    scaleY = renderedH > 0 ? pageHeight / renderedH : 1;
 
-  if (typeof signatureBase64 === 'string' && signatureBase64.includes('base64,')) {
-    const [header, b64data] = signatureBase64.split('base64,');
-    const imgBytes = Buffer.from(b64data, 'base64');
+    // ── 3. Incrustar la imagen ──────────────────────────────────────────────
+    sigImage = null;
+    sigDims = { width: 0, height: 0 };
+    const boxW = (Number(metadata.position?.width) || 160) * scaleX;
+    const boxH = (Number(metadata.position?.height) || 60) * scaleY;
 
-    try {
-      if (header.toLowerCase().includes('png')) {
-        sigImage = await pdfDoc.embedPng(imgBytes);
-      } else {
-        sigImage = await pdfDoc.embedJpg(imgBytes);
-      }
-
-      // Dimensiones deseadas de la imagen en el PDF
-      const sigW = typeof metadata.position?.width === 'number' ? metadata.position.width : 160;
-      const sigH = typeof metadata.position?.height === 'number' ? metadata.position.height : 60;
-      sigDims = sigImage.scale(Math.min(sigW / sigImage.width, sigH / sigImage.height));
-    } catch (imgErr) {
-      console.warn('[signPdfBuffer] No se pudo incrustar la imagen de firma:', imgErr.message);
+    if (typeof signatureBase64 === 'string' && signatureBase64.includes('base64,')) {
+      const [header, b64data] = signatureBase64.split('base64,');
+      const imgBytes = Buffer.from(b64data, 'base64');
+      sigImage = header.toLowerCase().includes('png')
+        ? await pdfDoc.embedPng(imgBytes)
+        : await pdfDoc.embedJpg(imgBytes);
+      sigDims = sigImage.scale(Math.min(boxW / sigImage.width, boxH / sigImage.height));
+    } else {
+      console.log('[SIGN-DEBUG] signatureBase64 no tiene el formato esperado (falta "base64,"):', typeof signatureBase64, String(signatureBase64).slice(0, 50));
     }
+
+    // ── 4. Posición ──────────────────────────────────────────────────────
+    const Y_CORRECTION_PT = 28.35; // ~1cm de ajuste fino hacia abajo (calibrado visualmente)
+
+    if (typeof metadata.position?.x === 'number' && typeof metadata.position?.y === 'number') {
+      sigX = metadata.position.x * scaleX;
+      sigY = pageHeight - (metadata.position.y * scaleY) - sigDims.height - Y_CORRECTION_PT;
+      sigX = Math.max(0, Math.min(sigX, pageWidth - sigDims.width));
+      sigY = Math.max(0, Math.min(sigY, pageHeight - sigDims.height));
+    } else {
+      sigX = MARGIN;
+      sigY = MARGIN + AUDIT_H;
+    }
+
+  } catch (stepErr) {
+    console.error('[SIGN-DEBUG] ERROR en pasos 2-4:', stepErr);
+    throw stepErr;
   }
-
-  // ── 4. Calcular posición XY en coordenadas pdf-lib (origen = esquina inf-izq) ─
-  const MARGIN = 24;
-  const AUDIT_H = 44; // altura reservada para el bloque de texto de auditoría
-
-  // X: posición de la imagen de firma
-  const sigX =
-    typeof metadata.position?.x === 'number'
-      ? metadata.position.x
-      : MARGIN;
-
-  // Y: la firma va encima del bloque de auditoría
-  const sigY =
-    typeof metadata.position?.y === 'number'
-      ? metadata.position.y
-      : MARGIN + AUDIT_H;
 
   // ── 5. Dibujar imagen de firma ───────────────────────────────────────────────
   if (sigImage) {

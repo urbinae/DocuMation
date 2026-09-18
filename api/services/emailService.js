@@ -81,7 +81,6 @@ async function sendEmail({ to, subject, html, text }) {
       html
     });
 
-    console.log(`[EMAIL SERVICE] Correo enviado exitosamente a ${to}. MessageId: ${info.messageId}`);
     return {
       success: true,
       simulated: false,
