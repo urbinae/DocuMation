@@ -11,7 +11,6 @@ if (GROQ_API_KEY && GROQ_API_KEY.trim() !== '' && GROQ_API_KEY !== 'gsk_...') {
   try {
     groqClient = new Groq({ apiKey: GROQ_API_KEY });
     isGroqConfigured = true;
-    console.log('[AI SERVICE] Cliente de Groq IA inicializado correctamente con GROQ_API_KEY.');
   } catch (err) {
     console.error('[AI SERVICE ERROR] Error al inicializar cliente Groq:', err.message);
   }

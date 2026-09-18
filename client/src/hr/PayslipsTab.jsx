@@ -39,6 +39,11 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
   const [selectedDeleteEmployees, setSelectedDeleteEmployees] = useState([]);
   const [selectedDeleteStatuses, setSelectedDeleteStatuses] = useState([]);
   const [advancedDeleteConfirmInput, setAdvancedDeleteConfirmInput] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Modal de confirmación para borrado individual
+  const [payslipToDelete, setPayslipToDelete] = useState(null); // { id, name }
+  const [isDeletingSingle, setIsDeletingSingle] = useState(false);
 
   // Recorrer recursivamente las entradas del file system para arrastrar carpetas
   const traverseFileSystemEntry = async (entry) => {
@@ -346,15 +351,23 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
     }
   };
 
-  const deletePayslip = async (id) => {
-    if (!window.confirm("¿Seguro que deseas eliminar este recibo? Se borrarán los archivos del servidor.")) return;
+  const deletePayslip = (id, name) => {
+    setPayslipToDelete({ id, name });
+  };
+
+  const confirmDeletePayslip = async () => {
+    if (!payslipToDelete) return;
+    setIsDeletingSingle(true);
     try {
-      const res = await fetch(`${API_BASE}/api/payslips/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/api/payslips/${payslipToDelete.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Error al eliminar');
-      triggerAlert('success', 'Recibo eliminado.');
+      triggerAlert('success', 'Recibo eliminado correctamente.');
       refreshData();
+      setPayslipToDelete(null);
     } catch (e) {
       triggerAlert('error', e.message);
+    } finally {
+      setIsDeletingSingle(false);
     }
   };
 
@@ -403,6 +416,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
     const idsToDelete = matchedDeletePayslips.map(p => p.id);
     if (idsToDelete.length === 0) return;
 
+    setIsDeleting(true);
     try {
       const res = await fetch(`${API_BASE}/api/payslips/delete-bulk`, {
         method: 'POST',
@@ -413,8 +427,12 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
       if (!res.ok) throw new Error(data.error || 'Error al eliminar el lote');
       triggerAlert('success', `Se eliminaron ${idsToDelete.length} recibos correctamente.`);
       refreshData();
+      setShowAdvancedDeleteModal(false);
     } catch (e) {
       triggerAlert('error', e.message);
+    } finally {
+      setIsDeleting(false);
+      setAdvancedDeleteConfirmInput('');
     }
   };
 
@@ -866,7 +884,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                             <button
                               className="btn btn-danger"
                               style={{ padding: '6px 10px' }}
-                              onClick={() => deletePayslip(ps.id)}
+                              onClick={() => deletePayslip(ps.id, ps.employeeName || ps.employees?.name || ps.employee_name || 'este recibo')}
                               title="Eliminar registro"
                             >
                               <Trash2 size={14} />
@@ -1428,6 +1446,7 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 <button
                   className="btn btn-secondary"
                   style={{ flex: 1 }}
+                  disabled={isDeleting}
                   onClick={() => setShowAdvancedDeleteModal(false)}
                 >
                   Cancelar
@@ -1435,20 +1454,122 @@ export default function PayslipsTab({ payslips, employees, refreshData, triggerA
                 <button
                   className="btn btn-danger"
                   style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                  disabled={matched.length === 0 || advancedDeleteConfirmInput !== 'ELIMINAR'}
-                  onClick={async () => {
-                    setShowAdvancedDeleteModal(false);
-                    await handleBulkDelete();
-                  }}
+                  disabled={matched.length === 0 || advancedDeleteConfirmInput !== 'ELIMINAR' || isDeleting}
+                  onClick={handleBulkDelete}
                 >
-                  <Trash2 size={14} />
-                  Borrar Lote Seleccionado
+                  {isDeleting ? (
+                    <>
+                      <span className="excel-loading-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
+                      Eliminando...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={14} />
+                      Borrar Lote Seleccionado
+                    </>
+                  )}
                 </button>
               </div>
             </div>
           </div>
         );
       })()}
+      {/* Modal de confirmación - Borrado individual */}
+      {payslipToDelete && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1200,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{
+            maxWidth: '420px',
+            width: '100%',
+            padding: '32px',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+            animation: 'fadeIn 0.15s ease'
+          }}>
+            {/* Icono y título */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', textAlign: 'center' }}>
+              <div style={{
+                width: '56px', height: '56px',
+                borderRadius: '50%',
+                background: 'rgba(244, 63, 94, 0.12)',
+                border: '1px solid rgba(244, 63, 94, 0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Trash2 size={24} color="var(--danger)" />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '6px' }}>
+                  Eliminar recibo
+                </h3>
+                <p style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                  Estás por eliminar el recibo de
+                  <br />
+                  <strong style={{ color: 'var(--text-primary)' }}>{payslipToDelete.name}</strong>
+                </p>
+              </div>
+            </div>
+
+            {/* Advertencia */}
+            <div style={{
+              background: 'rgba(244, 63, 94, 0.08)',
+              border: '1px solid rgba(244, 63, 94, 0.2)',
+              borderRadius: 'var(--radius)',
+              padding: '12px 14px',
+              display: 'flex',
+              gap: '10px',
+              alignItems: 'flex-start'
+            }}>
+              <AlertTriangle size={16} color="#f87171" style={{ flexShrink: 0, marginTop: '1px' }} />
+              <p style={{ fontSize: '12px', color: '#fda4af', margin: 0, lineHeight: '1.5' }}>
+                Esta acción es <strong>permanente e irreversible</strong>. Se eliminarán
+                el registro y los archivos PDF del servidor.
+              </p>
+            </div>
+
+            {/* Botones */}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ flex: 1 }}
+                disabled={isDeletingSingle}
+                onClick={() => setPayslipToDelete(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn btn-danger"
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                disabled={isDeletingSingle}
+                onClick={confirmDeletePayslip}
+              >
+                {isDeletingSingle ? (
+                  <>
+                    <span className="excel-loading-spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }} />
+                    Eliminando...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    Confirmar eliminación
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
