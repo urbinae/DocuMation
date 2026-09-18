@@ -383,8 +383,8 @@ export default function EmployeePortal({ token, payslipToSign = null, handleLogo
             )}
             <a
               href={`${API_BASE}/api/download/signed/${payslip.id}`}
-              download={`Recibo_Firmado_${payslip.month || payslip.id}.pdf`}
-              onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${payslip.id}`, `Recibo_Firmado_${payslip.month || payslip.id}.pdf`)}
+              download={`${payslip.month || '0000-00'} Recibo de Sueldo ${payslip.employeeName || ''} - Firmado.pdf`}
+              onClick={(e) => handleDirectDownload(e, `${API_BASE}/api/download/signed/${payslip.id}`, `${payslip.month || '0000-00'} Recibo de Sueldo ${payslip.employeeName || ''} - Firmado.pdf`)}
               className="btn btn-primary"
               style={{ background: 'var(--success)', boxShadow: '0 4px 14px 0 rgba(16, 185, 129, 0.3)' }}
             >
